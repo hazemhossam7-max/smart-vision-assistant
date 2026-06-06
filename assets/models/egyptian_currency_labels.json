@@ -1,0 +1,24 @@
+{
+  "model": "egyptian_currency_yolov8",
+  "source": "https://github.com/A7MEDELRAGGAL/Egyptian-Currency-System",
+  "classes": [
+    {"id": 0, "label": "5_F", "value_egp": 5, "side": "front"},
+    {"id": 1, "label": "5_B", "value_egp": 5, "side": "back"},
+    {"id": 2, "label": "10_F", "value_egp": 10, "side": "front"},
+    {"id": 3, "label": "10_B", "value_egp": 10, "side": "back"},
+    {"id": 4, "label": "20_F", "value_egp": 20, "side": "front"},
+    {"id": 5, "label": "20_B", "value_egp": 20, "side": "back"},
+    {"id": 6, "label": "50_F", "value_egp": 50, "side": "front"},
+    {"id": 7, "label": "50_B", "value_egp": 50, "side": "back"},
+    {"id": 8, "label": "100_F", "value_egp": 100, "side": "front"},
+    {"id": 9, "label": "100_B", "value_egp": 100, "side": "back"},
+    {"id": 10, "label": "200_F", "value_egp": 200, "side": "front"},
+    {"id": 11, "label": "200_B", "value_egp": 200, "side": "back"}
+  ],
+  "reported_metrics": {
+    "precision": 0.9989,
+    "recall": 1.0,
+    "map50": 0.995,
+    "map50_95": 0.9907
+  }
+}

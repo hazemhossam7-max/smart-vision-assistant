@@ -1,0 +1,28 @@
+name: smart_vision_assistant
+description: Smart Vision Assistant for Blind Users - Flutter MVP with local keyframe retrieval.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  camera: 0.10.6
+  permission_handler: ^11.3.1
+  speech_to_text: ^7.0.0
+  flutter_tts: ^4.0.2
+  http: ^1.2.2
+  image: ^4.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/models/egyptian_currency_yolov8.pt
+    - assets/models/egyptian_currency_labels.json
