@@ -112,7 +112,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     var analyzedFrames = <FrameMetadata>[];
-    var cleanupFrames = true;
 
     setState(() {
       _isBusy = true;
@@ -242,7 +241,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _isBusy = false;
       });
     } finally {
-      cleanupFrames = await _securitySettingsService.isPrivacyModeEnabled();
+      final cleanupFrames = await _securitySettingsService.isPrivacyModeEnabled();
       if (cleanupFrames && analyzedFrames.isNotEmpty) {
         await _temporaryFrameCleanupService.deleteTemporaryFrameFiles(analyzedFrames);
       }
