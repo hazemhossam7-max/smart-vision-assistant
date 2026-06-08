@@ -25,6 +25,14 @@ class AppConfig {
     'AI_PROVIDER',
     defaultValue: 'gemini',
   );
+  static const productionBuild = bool.fromEnvironment(
+    'PRODUCTION_BUILD',
+    defaultValue: false,
+  );
+  static const allowDirectAiProviders = bool.fromEnvironment(
+    'ALLOW_DIRECT_AI_PROVIDERS',
+    defaultValue: false,
+  );
   static const geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
   static const openAiApiKey = String.fromEnvironment('OPENAI_API_KEY');
   static const openRouterApiKey = String.fromEnvironment('OPENROUTER_API_KEY');
@@ -36,8 +44,13 @@ class AppConfig {
     'BACKEND_BASE_URL',
     defaultValue: 'http://127.0.0.1:3000',
   );
+  static const backendClientToken = String.fromEnvironment('BACKEND_CLIENT_TOKEN');
 
   static AiProvider get aiProvider {
+    if (productionBuild && !allowDirectAiProviders) {
+      return AiProvider.backend;
+    }
+
     switch (_providerName.toLowerCase()) {
       case 'backend':
         return AiProvider.backend;
