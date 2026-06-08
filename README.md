@@ -44,6 +44,17 @@ Each captured frame is scored locally before any AI request:
 
 The app currently captures a short burst and selects the top 3 keyframes.
 
+## Security and Privacy
+
+- Privacy Mode defaults to on.
+- The app asks for Cloud AI consent before the first backend/cloud analysis.
+- Cloud consent and privacy settings are stored with `flutter_secure_storage`.
+- Selected keyframes are filtered by `PrivacyGuardService` before upload.
+- Temporary camera frame files are deleted after the pipeline finishes when Privacy Mode is enabled.
+- The Security & Privacy screen protects sensitive actions with device biometric/PIN auth when enabled.
+- OpenRouter requests ask for privacy-conscious routing with `provider.data_collection=deny` and `provider.zdr=true`.
+- The backend is the secure production path. Direct OpenRouter remains only for demos/testing.
+
 ## Egyptian Currency Model
 
 This repo includes the upstream Egyptian currency YOLOv8 weights from:
@@ -162,6 +173,7 @@ Then add camera and microphone permission descriptions to the generated platform
   - `android.permission.CAMERA`
   - `android.permission.RECORD_AUDIO`
   - `android.permission.INTERNET`
+  - `android.permission.USE_BIOMETRIC`
 - iOS: `ios/Runner/Info.plist`
   - `NSCameraUsageDescription`
   - `NSMicrophoneUsageDescription`
