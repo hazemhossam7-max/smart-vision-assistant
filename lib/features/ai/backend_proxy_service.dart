@@ -40,9 +40,16 @@ class BackendProxyService implements AiService {
         '${(_baseUrl ?? AppConfig.backendBaseUrl).replaceFirst(RegExp(r'/$'), '')}/api/vision/analyze',
       );
 
+      if (_isInsecureProductionUrl(endpoint)) {
+        return const AiResponse(
+          provider: 'backend_insecure_url',
+          text: 'The production backend must use HTTPS. Please update the backend URL.',
+        );
+      }
+
       final response = await client.post(
         endpoint,
-        headers: const {'Content-Type': 'application/json'},
+        headers: _headers,
         body: jsonEncode({
           'userCommand': userCommand,
           'intent': intent.label,
@@ -82,6 +89,22 @@ class BackendProxyService implements AiService {
         client.close();
       }
     }
+  }
+
+  Map<String, String> get _headers {
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    if (AppConfig.backendClientToken.isNotEmpty) {
+      headers['X-Client-Token'] = AppConfig.backendClientToken;
+    }
+    return headers;
+  }
+
+  bool _isInsecureProductionUrl(Uri endpoint) {
+    if (!AppConfig.productionBuild || endpoint.scheme == 'https') {
+      return false;
+    }
+
+    return endpoint.host != '127.0.0.1' && endpoint.host != 'localhost';
   }
 
   Future<List<Map<String, Object?>>> _selectedFramePayload(
