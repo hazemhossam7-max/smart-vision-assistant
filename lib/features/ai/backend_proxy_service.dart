@@ -72,8 +72,8 @@ class BackendProxyService implements AiService {
             ? responseText.trim()
             : 'The backend returned an empty response. Please try again.',
       );
-    } catch (error) {
-      return AiResponse(
+    } catch (_) {
+      return const AiResponse(
         provider: 'backend_exception',
         text: 'The secure backend request failed. Please check that the backend is running and try again.',
       );
