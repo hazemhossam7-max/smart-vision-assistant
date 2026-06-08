@@ -1,5 +1,6 @@
 import '../../core/constants/app_config.dart';
 import 'ai_service.dart';
+import 'backend_proxy_service.dart';
 import 'gemini_service.dart';
 import 'openai_service.dart';
 import 'openrouter_service.dart';
@@ -9,6 +10,8 @@ class AiServiceFactory {
 
   static AiService create() {
     switch (AppConfig.aiProvider) {
+      case AiProvider.backend:
+        return const BackendProxyService();
       case AiProvider.openrouter:
         return const OpenRouterService();
       case AiProvider.openai:
