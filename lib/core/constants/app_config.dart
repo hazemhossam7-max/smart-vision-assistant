@@ -2,6 +2,7 @@ enum AiProvider {
   gemini,
   openai,
   openrouter,
+  backend,
 }
 
 class AppConfig {
@@ -31,9 +32,15 @@ class AppConfig {
     'OPENROUTER_MODEL',
     defaultValue: 'google/gemini-2.5-flash',
   );
+  static const backendBaseUrl = String.fromEnvironment(
+    'BACKEND_BASE_URL',
+    defaultValue: 'http://127.0.0.1:3000',
+  );
 
   static AiProvider get aiProvider {
     switch (_providerName.toLowerCase()) {
+      case 'backend':
+        return AiProvider.backend;
       case 'openrouter':
         return AiProvider.openrouter;
       case 'openai':
