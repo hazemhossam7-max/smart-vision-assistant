@@ -161,7 +161,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _allFrames = analyzedFrames;
         _selectedFrames = selectedFrames;
-        _status = 'Sending selected keyframes to placeholder AI service...';
+        _status = 'Sending selected keyframes to secure backend...';
       });
 
       // 6) Send selected keyframes plus metadata to the AI layer.
