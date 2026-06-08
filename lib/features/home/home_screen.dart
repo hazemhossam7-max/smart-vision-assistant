@@ -2,6 +2,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_config.dart';
+import '../../core/security/local_auth_service.dart';
 import '../../core/security/privacy_guard_service.dart';
 import '../../core/security/security_settings_service.dart';
 import '../../core/security/temporary_frame_cleanup_service.dart';
@@ -38,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _privacyGuardService = const PrivacyGuardService();
   final _securitySettingsService = const SecuritySettingsService();
   final _temporaryFrameCleanupService = const TemporaryFrameCleanupService();
+  final _localAuthService = LocalAuthService();
   final AiService _aiService = AiServiceFactory.create();
 
   late final FrameCaptureService _frameCaptureService;
@@ -313,6 +315,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _openSecuritySettings() async {
+    if (await _securitySettingsService.isBiometricLockEnabled()) {
+      final authenticated = await _localAuthService.authenticateForSensitiveAction(
+        reason: 'Authenticate to open Security and Privacy settings.',
+      );
+      if (!authenticated) {
+        return;
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
+
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (context) => SecuritySettingsScreen(knownFrames: _allFrames),
