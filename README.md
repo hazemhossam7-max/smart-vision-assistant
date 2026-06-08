@@ -69,15 +69,23 @@ recommended export command and expected asset path.
 
 ## Backend Proxy
 
-For the secure provider path, put the OpenRouter API key only in `backend/.env`:
+For the secure provider path, put secrets only in `backend/.env`:
 
 ```bash
 cd backend
 copy .env.example .env
 ```
 
-Then edit `backend/.env` and set `OPENROUTER_API_KEY`. Do not pass
-`OPENROUTER_API_KEY` to Flutter when using the backend provider.
+Then edit `backend/.env` and set:
+
+```env
+OPENROUTER_API_KEY=your_openrouter_key
+BACKEND_CLIENT_TOKEN=make_this_a_long_random_value
+```
+
+Do not pass `OPENROUTER_API_KEY` to Flutter. The backend token is not a full
+replacement for user auth or device attestation, but it prevents anonymous
+backend calls when configured.
 
 Terminal 1:
 
@@ -100,7 +108,8 @@ adb devices
 adb -s 07748251CL002087 reverse tcp:3000 tcp:3000
 flutter run -d 07748251CL002087 ^
   --dart-define=AI_PROVIDER=backend ^
-  --dart-define=BACKEND_BASE_URL=http://127.0.0.1:3000
+  --dart-define=BACKEND_BASE_URL=http://127.0.0.1:3000 ^
+  --dart-define=BACKEND_CLIENT_TOKEN=make_this_a_long_random_value
 ```
 
 Production should use an HTTPS backend URL instead of local cleartext HTTP.
@@ -112,7 +121,8 @@ No API keys are hardcoded. The recommended provider is the backend proxy:
 ```bash
 flutter run \
   --dart-define=AI_PROVIDER=backend \
-  --dart-define=BACKEND_BASE_URL=http://127.0.0.1:3000
+  --dart-define=BACKEND_BASE_URL=http://127.0.0.1:3000 \
+  --dart-define=BACKEND_CLIENT_TOKEN=make_this_a_long_random_value
 ```
 
 Direct providers remain available for demos/testing. For example:
@@ -124,8 +134,19 @@ flutter run -d 07748251CL002087 \
   --dart-define=OPENROUTER_MODEL=google/gemini-2.5-flash
 ```
 
-For production, call OpenRouter through a backend proxy. Mobile API keys can be
-extracted from APK/IPA files.
+For production builds, force the backend provider and HTTPS backend URL:
+
+```bash
+flutter run --release \
+  --dart-define=PRODUCTION_BUILD=true \
+  --dart-define=AI_PROVIDER=backend \
+  --dart-define=BACKEND_BASE_URL=https://your-backend.example.com \
+  --dart-define=BACKEND_CLIENT_TOKEN=make_this_a_long_random_value
+```
+
+Production backend environment should set `ENFORCE_HTTPS=true`, keep secrets in
+the host secret manager or environment settings, and avoid committing `.env`.
+See `SECURITY_PIPELINE.md` for the remaining hardening plan.
 
 ## Platform Setup
 
