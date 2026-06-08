@@ -1,11 +1,22 @@
 require('dotenv').config();
 
+const crypto = require('crypto');
 const cors = require('cors');
 const express = require('express');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const model = process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash';
+const requestBodyLimit = process.env.REQUEST_BODY_LIMIT || '12mb';
+const maxSelectedFrames = Number(process.env.MAX_SELECTED_FRAMES || 3);
+const maxAllFrames = Number(process.env.MAX_ALL_FRAMES || 30);
+const maxBase64ImageBytes = Number(process.env.MAX_BASE64_IMAGE_BYTES || 5 * 1024 * 1024);
+const maxUserCommandChars = Number(process.env.MAX_USER_COMMAND_CHARS || 500);
+const rateLimitWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 60 * 1000);
+const rateLimitMaxRequests = Number(process.env.RATE_LIMIT_MAX_REQUESTS || 20);
+const backendClientToken = process.env.BACKEND_CLIENT_TOKEN || '';
+const enforceHttps = process.env.ENFORCE_HTTPS === 'true';
+const trustedProxy = process.env.TRUST_PROXY === 'true';
 
 const allowedIntents = new Set([
   'scene_description',
@@ -16,8 +27,19 @@ const allowedIntents = new Set([
   'currency_recognition',
 ]);
 
-app.use(cors());
-app.use(express.json({ limit: '25mb' }));
+const rateLimitBuckets = new Map();
+
+if (trustedProxy) {
+  app.set('trust proxy', 1);
+}
+
+app.disable('x-powered-by');
+app.use(securityHeaders);
+app.use(cors(buildCorsOptions()));
+app.use(express.json({ limit: requestBodyLimit }));
+app.use('/api/', enforceHttpsMiddleware);
+app.use('/api/', authenticateClient);
+app.use('/api/', rateLimitRequests);
 
 app.get('/health', (_request, response) => {
   response.json({ status: 'ok' });
@@ -93,6 +115,120 @@ app.post('/api/vision/analyze', async (request, response) => {
   }
 });
 
+app.use((error, _request, response, next) => {
+  if (!error) {
+    return next();
+  }
+
+  if (error.type === 'entity.too.large') {
+    return response.status(413).json({
+      text: 'The selected frames are too large for the backend request.',
+      provider: 'backend_payload_too_large',
+    });
+  }
+
+  if (error instanceof SyntaxError && 'body' in error) {
+    return response.status(400).json({
+      text: 'The backend received invalid JSON.',
+      provider: 'backend_invalid_json',
+    });
+  }
+
+  return response.status(500).json({
+    text: 'The backend failed before processing the request.',
+    provider: 'backend_request_error',
+  });
+});
+
+function securityHeaders(_request, response, next) {
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.setHeader('Referrer-Policy', 'no-referrer');
+  response.setHeader('Cache-Control', 'no-store');
+  response.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+  next();
+}
+
+function buildCorsOptions() {
+  const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (allowedOrigins.length === 0) {
+    return { origin: false };
+  }
+
+  return {
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error('CORS origin denied'));
+    },
+  };
+}
+
+function enforceHttpsMiddleware(request, response, next) {
+  if (!enforceHttps) {
+    return next();
+  }
+
+  const forwardedProto = request.get('x-forwarded-proto');
+  if (request.secure || forwardedProto === 'https') {
+    return next();
+  }
+
+  return response.status(403).json({
+    text: 'HTTPS is required for backend requests.',
+    provider: 'backend_https_required',
+  });
+}
+
+function authenticateClient(request, response, next) {
+  if (!backendClientToken) {
+    return next();
+  }
+
+  const providedToken = request.get('x-client-token') || '';
+  if (safeTokenEquals(providedToken, backendClientToken)) {
+    return next();
+  }
+
+  return response.status(401).json({
+    text: 'The backend rejected this app request.',
+    provider: 'backend_unauthorized',
+  });
+}
+
+function rateLimitRequests(request, response, next) {
+  const identifier = request.get('x-client-token') || request.ip || 'unknown';
+  const key = crypto.createHash('sha256').update(identifier).digest('hex');
+  const now = Date.now();
+  const bucket = rateLimitBuckets.get(key);
+
+  if (!bucket || now >= bucket.resetAt) {
+    rateLimitBuckets.set(key, { count: 1, resetAt: now + rateLimitWindowMs });
+    return next();
+  }
+
+  if (bucket.count >= rateLimitMaxRequests) {
+    response.setHeader('Retry-After', Math.ceil((bucket.resetAt - now) / 1000));
+    return response.status(429).json({
+      text: 'Too many backend requests. Please wait a moment and try again.',
+      provider: 'backend_rate_limited',
+    });
+  }
+
+  bucket.count += 1;
+  return next();
+}
+
+function safeTokenEquals(providedToken, expectedToken) {
+  const provided = Buffer.from(providedToken);
+  const expected = Buffer.from(expectedToken);
+  return provided.length === expected.length && crypto.timingSafeEqual(provided, expected);
+}
+
 function validateAnalyzeRequest(body) {
   if (!body || typeof body !== 'object') {
     return 'Invalid request body.';
@@ -100,6 +236,10 @@ function validateAnalyzeRequest(body) {
 
   if (typeof body.userCommand !== 'string' || body.userCommand.trim() === '') {
     return 'A spoken user command is required.';
+  }
+
+  if (body.userCommand.length > maxUserCommandChars) {
+    return 'The spoken command is too long.';
   }
 
   if (!allowedIntents.has(body.intent)) {
@@ -110,25 +250,85 @@ function validateAnalyzeRequest(body) {
     return 'selectedFrames must be an array.';
   }
 
-  if (body.selectedFrames.length < 1 || body.selectedFrames.length > 3) {
-    return 'selectedFrames must contain 1 to 3 frames.';
+  if (body.selectedFrames.length < 1 || body.selectedFrames.length > maxSelectedFrames) {
+    return `selectedFrames must contain 1 to ${maxSelectedFrames} frames.`;
   }
 
   if (!Array.isArray(body.allFrames)) {
     return 'allFrames must be an array.';
   }
 
-  for (const frame of body.selectedFrames) {
-    if (!frame || typeof frame !== 'object') {
-      return 'Each selected frame must be an object.';
-    }
+  if (body.allFrames.length > maxAllFrames) {
+    return `allFrames must contain at most ${maxAllFrames} frames.`;
+  }
 
-    if (typeof frame.base64Image !== 'string' || frame.base64Image.trim() === '') {
-      return 'Each selected frame must include a base64Image.';
+  for (const frame of body.selectedFrames) {
+    const metadataError = validateFrameMetadata(frame, true);
+    if (metadataError) {
+      return metadataError;
+    }
+  }
+
+  for (const frame of body.allFrames) {
+    const metadataError = validateFrameMetadata(frame, false);
+    if (metadataError) {
+      return metadataError;
     }
   }
 
   return null;
+}
+
+function validateFrameMetadata(frame, requireImage) {
+  if (!frame || typeof frame !== 'object' || Array.isArray(frame)) {
+    return 'Each frame must be an object.';
+  }
+
+  if (typeof frame.frameId !== 'string' || frame.frameId.length > 100) {
+    return 'Each frame must include a valid frameId.';
+  }
+
+  for (const field of ['index', 'width', 'height']) {
+    if (!Number.isInteger(frame[field]) || frame[field] < 0) {
+      return `Each frame must include a valid ${field}.`;
+    }
+  }
+
+  for (const field of [
+    'clarityScore',
+    'brightnessScore',
+    'uniquenessScore',
+    'objectScore',
+    'motionScore',
+    'finalScore',
+  ]) {
+    if (typeof frame[field] !== 'number' || !Number.isFinite(frame[field])) {
+      return `Each frame must include a valid ${field}.`;
+    }
+  }
+
+  if (!Array.isArray(frame.rejectionReasons)) {
+    return 'Each frame must include rejectionReasons.';
+  }
+
+  if (requireImage) {
+    if (typeof frame.base64Image !== 'string' || frame.base64Image.trim() === '') {
+      return 'Each selected frame must include a base64Image.';
+    }
+
+    const imageBytes = estimateBase64Bytes(frame.base64Image);
+    if (imageBytes > maxBase64ImageBytes) {
+      return 'One selected frame image is too large.';
+    }
+  }
+
+  return null;
+}
+
+function estimateBase64Bytes(base64Image) {
+  const stripped = stripDataUrlPrefix(base64Image).replace(/\s/g, '');
+  const padding = stripped.endsWith('==') ? 2 : stripped.endsWith('=') ? 1 : 0;
+  return Math.floor((stripped.length * 3) / 4) - padding;
 }
 
 function buildSecuritySystemPrompt() {
