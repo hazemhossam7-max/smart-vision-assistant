@@ -18,7 +18,43 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 - Prevent production Flutter builds from using direct AI providers unless explicitly allowed.
 - Reject insecure non-local backend URLs in production Flutter builds.
 
-## Phase 2: Production Deployment
+## Phase 2: Privacy-Safe Frame Handling - Implemented MVP
+
+- Add `PrivacyGuardService` to reject weak, rejected, underexposed, overexposed, or low-score frames before upload.
+- Send only privacy-safe selected keyframes to the AI service.
+- Stop the cloud request and speak a short accessible message when no safe frames remain.
+- Add `TemporaryFrameCleanupService` to delete temporary captured frame files after the pipeline finishes.
+- Keep Privacy Mode on by default so temporary image files are not kept after response.
+
+## Phase 3: OpenRouter Privacy Settings - Implemented MVP
+
+- Add OpenRouter provider routing options:
+  - `data_collection: deny`
+  - `zdr: true`
+- Strengthen backend and direct fallback system prompts against image prompt injection.
+- Avoid returning raw OpenRouter error bodies to Flutter.
+- Continue treating backend as the secure production path and direct OpenRouter as demo/testing only.
+
+## Phase 4: Secure App Settings - Implemented MVP
+
+- Add `flutter_secure_storage`.
+- Add `SecureStorageService` wrapper so secure storage is not used directly throughout the app.
+- Add `SecuritySettingsService` with secure defaults:
+  - `privacy_mode_enabled`: true
+  - `cloud_consent_given`: false
+  - `save_history_enabled`: false
+  - `biometric_lock_enabled`: false
+- Ask for Cloud AI consent before the first backend/cloud analysis and store the result securely.
+
+## Phase 5: Biometric/PIN Protection - Implemented MVP
+
+- Add `local_auth`.
+- Add `LocalAuthService` with device biometric/PIN fallback.
+- Add a Security & Privacy screen for Privacy Mode, Save History, Cloud Consent status, Biometric Lock, and Delete Local Data.
+- Require authentication for sensitive settings/actions when appropriate.
+- Keep the main microphone/camera flow fast and unlocked for accessibility.
+
+## Phase 6: Production Deployment - Pending
 
 - Deploy the backend behind HTTPS using a managed platform or reverse proxy.
 - Set production environment variables in the host platform, not in committed files.
@@ -27,7 +63,7 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 - Configure domain allowlists and network firewall rules where available.
 - Add health checks and uptime monitoring for `/health`.
 
-## Phase 3: Stronger Authentication
+## Phase 7: Stronger Authentication - Pending
 
 `BACKEND_CLIENT_TOKEN` is a first production gate, but a static mobile token can still be extracted from an APK/IPA. Upgrade to one of these before public release:
 
@@ -36,7 +72,7 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 - Per-user quotas and revocation.
 - Server-side session auditing.
 
-## Phase 4: Abuse and Cost Controls
+## Phase 8: Abuse and Cost Controls - Pending
 
 - Replace in-memory rate limiting with Redis or a managed rate limit service for multi-instance deployments.
 - Add per-user, per-device, and per-IP quotas.
@@ -44,15 +80,15 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 - Add alerting for spikes, repeated validation failures, and high-cost usage.
 - Add request IDs to backend logs, but never log API keys or base64 images.
 
-## Phase 5: Privacy and Data Governance
+## Phase 9: Privacy and Data Governance - Pending
 
 - Publish a privacy policy explaining camera frame processing and third-party AI processing.
-- Add explicit user consent for sending selected frames to the backend and AI provider.
+- Add explicit user consent copy to onboarding if onboarding is added.
 - Avoid storing image frames unless a user explicitly opts in.
 - Define retention rules for logs and metadata.
 - Review OpenRouter/model-provider retention settings and terms.
 
-## Phase 6: Mobile Network Hardening
+## Phase 10: Mobile Network Hardening - Pending
 
 - Use HTTPS-only production backend URLs.
 - Remove local cleartext Android config from release builds or isolate it to debug builds.
