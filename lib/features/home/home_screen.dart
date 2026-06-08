@@ -2,11 +2,15 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_config.dart';
+import '../../core/security/privacy_guard_service.dart';
+import '../../core/security/security_settings_service.dart';
+import '../../core/security/temporary_frame_cleanup_service.dart';
 import '../../core/services/logger_service.dart';
 import '../ai/ai_service.dart';
 import '../ai/ai_service_factory.dart';
 import '../camera/camera_service.dart';
 import '../camera/frame_capture_service.dart';
+import '../security/security_settings_screen.dart';
 import '../tts/tts_service.dart';
 import '../vision/frame_metadata.dart';
 import '../vision/frame_quality_analyzer.dart';
@@ -31,6 +35,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _frameAnalyzer = FrameQualityAnalyzer();
   final _keyframeSelector = const KeyframeSelector();
   final _ttsService = TtsService();
+  final _privacyGuardService = const PrivacyGuardService();
+  final _securitySettingsService = const SecuritySettingsService();
+  final _temporaryFrameCleanupService = const TemporaryFrameCleanupService();
   final AiService _aiService = AiServiceFactory.create();
 
   late final FrameCaptureService _frameCaptureService;
@@ -104,6 +111,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
 
+    var analyzedFrames = <FrameMetadata>[];
+    var cleanupFrames = true;
+
     setState(() {
       _isBusy = true;
       _recognizedCommand = '';
@@ -150,25 +160,59 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       // 4) Score every frame locally using computer vision features.
       setState(() => _status = 'Analyzing frame quality and uniqueness...');
-      final analyzedFrames = await _analyzeFrames(rawFrames, intent);
+      analyzedFrames = await _analyzeFrames(rawFrames, intent);
 
       // 5) Remove weak frames and keep only the top keyframes.
       final selectedFrames = _keyframeSelector.selectTopFrames(
         frames: analyzedFrames,
         topK: AppConfig.topKeyframes,
       );
+      final safeFrames = _privacyGuardService.filterSafeKeyframes(selectedFrames);
+
+      if (safeFrames.isEmpty) {
+        const message = 'I could not find a safe clear frame to analyze. Please try again.';
+        await _ttsService.speak(message);
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _allFrames = analyzedFrames;
+          _selectedFrames = const [];
+          _assistantResponse = '';
+          _status = message;
+          _isBusy = false;
+        });
+        return;
+      }
+
+      final hasConsent = await _ensureCloudConsent(intent);
+      if (!hasConsent) {
+        await _ttsService.speak('Cloud analysis cancelled.');
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _allFrames = analyzedFrames;
+          _selectedFrames = safeFrames;
+          _status = 'Cloud analysis cancelled.';
+          _isBusy = false;
+        });
+        return;
+      }
 
       setState(() {
         _allFrames = analyzedFrames;
-        _selectedFrames = selectedFrames;
-        _status = 'Sending selected keyframes to secure backend...';
+        _selectedFrames = safeFrames;
+        _status = safeFrames.length == selectedFrames.length
+            ? 'Sending selected keyframes to secure backend...'
+            : 'Sending ${safeFrames.length} privacy-safe keyframes to secure backend...';
       });
 
-      // 6) Send selected keyframes plus metadata to the AI layer.
+      // 6) Send only privacy-safe keyframes plus metadata to the AI layer.
       final response = await _aiService.analyzeKeyframes(
         userCommand: command,
         intent: intent,
-        selectedFrames: selectedFrames,
+        selectedFrames: safeFrames,
         allFrames: analyzedFrames,
       );
 
@@ -181,7 +225,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       setState(() {
         _assistantResponse = response.text;
-        _status = 'Done. ${selectedFrames.length} keyframes selected.';
+        _status = 'Done. ${safeFrames.length} privacy-safe keyframes selected.';
         _isBusy = false;
       });
     } catch (error) {
@@ -197,7 +241,55 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _status = 'Pipeline failed: $error';
         _isBusy = false;
       });
+    } finally {
+      cleanupFrames = await _securitySettingsService.isPrivacyModeEnabled();
+      if (cleanupFrames && analyzedFrames.isNotEmpty) {
+        await _temporaryFrameCleanupService.deleteTemporaryFrameFiles(analyzedFrames);
+      }
     }
+  }
+
+  Future<bool> _ensureCloudConsent(VisionIntent intent) async {
+    if (await _securitySettingsService.hasCloudConsent()) {
+      return true;
+    }
+
+    final warning = _privacyGuardService.buildPrivacyWarningForIntent(intent);
+    await _ttsService.speak(warning);
+
+    if (!mounted) {
+      return false;
+    }
+
+    final accepted = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('Cloud AI Consent'),
+              content: Text(
+                '$warning\n\nThis will send selected camera frames to the AI for analysis. Do you want to continue?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Continue'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (accepted) {
+      await _securitySettingsService.setCloudConsentGiven(true);
+    }
+
+    return accepted;
   }
 
   Future<List<FrameMetadata>> _analyzeFrames(
@@ -221,6 +313,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return analyzedFrames;
   }
 
+  Future<void> _openSecuritySettings() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => SecuritySettingsScreen(knownFrames: _allFrames),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -238,6 +338,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       appBar: AppBar(
         title: const Text('Smart Vision Assistant'),
         centerTitle: true,
+        actions: [
+          TextButton(
+            onPressed: _isBusy ? null : _openSecuritySettings,
+            child: const Text('Security & Privacy'),
+          ),
+        ],
       ),
       body: SafeArea(
         child: ListView(
