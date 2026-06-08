@@ -6,7 +6,8 @@ visual assistance for blind users.
 The app listens for a spoken command, classifies the command into a vision
 intent, captures a burst of camera frames, scores the frames locally, selects
 the best keyframes, then sends only those selected keyframes to a multimodal AI
-model through OpenRouter.
+model. The secure development path sends them through the backend proxy so the
+OpenRouter API key stays off the mobile app.
 
 ## MVP Flow
 
@@ -17,7 +18,7 @@ model through OpenRouter.
 5. Each frame is scored locally using clarity, brightness, uniqueness, object importance, and motion/change.
 6. Bad frames are filtered out.
 7. The top 3 keyframes are selected.
-8. OpenRouter receives only the selected frames plus metadata.
+8. The backend proxy receives only selected frames plus metadata and calls OpenRouter.
 9. The response is spoken with TTS and displayed on screen.
 
 ## Supported Intents
@@ -66,9 +67,55 @@ Important: the included model is a PyTorch `.pt` artifact. Flutter on-device
 inference should use an exported `.tflite` file. The model card includes the
 recommended export command and expected asset path.
 
+## Backend Proxy
+
+For the secure provider path, put the OpenRouter API key only in `backend/.env`:
+
+```bash
+cd backend
+copy .env.example .env
+```
+
+Then edit `backend/.env` and set `OPENROUTER_API_KEY`. Do not pass
+`OPENROUTER_API_KEY` to Flutter when using the backend provider.
+
+Terminal 1:
+
+```bash
+cd backend
+npm install
+node server.js
+```
+
+Health check:
+
+```bash
+curl http://127.0.0.1:3000/health
+```
+
+Terminal 2 for a real Android device:
+
+```bash
+adb devices
+adb -s 07748251CL002087 reverse tcp:3000 tcp:3000
+flutter run -d 07748251CL002087 ^
+  --dart-define=AI_PROVIDER=backend ^
+  --dart-define=BACKEND_BASE_URL=http://127.0.0.1:3000
+```
+
+Production should use an HTTPS backend URL instead of local cleartext HTTP.
+
 ## API Keys
 
-No API keys are hardcoded. Pass them at runtime for demos/testing:
+No API keys are hardcoded. The recommended provider is the backend proxy:
+
+```bash
+flutter run \
+  --dart-define=AI_PROVIDER=backend \
+  --dart-define=BACKEND_BASE_URL=http://127.0.0.1:3000
+```
+
+Direct providers remain available for demos/testing. For example:
 
 ```bash
 flutter run -d 07748251CL002087 \
