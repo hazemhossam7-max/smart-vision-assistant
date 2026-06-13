@@ -18,6 +18,7 @@ const dailyQuotaMaxRequests = Number(process.env.DAILY_QUOTA_MAX_REQUESTS || 300
 const backendClientToken = process.env.BACKEND_CLIENT_TOKEN || '';
 const enforceHttps = process.env.ENFORCE_HTTPS === 'true';
 const trustedProxy = process.env.TRUST_PROXY === 'true';
+const productionMode = process.env.NODE_ENV === 'production';
 
 const allowedIntents = new Set([
   'scene_description',
@@ -47,12 +48,16 @@ const unsafeResponsePatterns = [
 const rateLimitBuckets = new Map();
 const dailyQuotaBuckets = new Map();
 
+validateStartupConfiguration();
+
 if (trustedProxy) {
   app.set('trust proxy', 1);
 }
 
 app.disable('x-powered-by');
+app.use(assignRequestId);
 app.use(securityHeaders);
+app.use(logRequestLifecycle);
 app.use(cors(buildCorsOptions()));
 app.use(express.json({ limit: requestBodyLimit }));
 app.use('/api/', enforceHttpsMiddleware);
@@ -68,25 +73,31 @@ app.post('/api/vision/analyze', async (request, response) => {
   try {
     const validationError = validateAnalyzeRequest(request.body);
     if (validationError) {
+      logSecurityEvent(request, 'validation_rejected', { reason: validationError });
       return response.status(400).json({
         text: validationError,
         provider: 'backend_validation_error',
+        requestId: request.id,
       });
     }
 
     const moderationError = moderateUserCommand(request.body.userCommand);
     if (moderationError) {
+      logSecurityEvent(request, 'moderation_blocked');
       return response.status(400).json({
         text: moderationError,
         provider: 'backend_moderation_blocked',
+        requestId: request.id,
       });
     }
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
+      logSecurityEvent(request, 'missing_openrouter_key');
       return response.status(500).json({
         text: 'The backend is missing OPENROUTER_API_KEY. Add it to backend/.env and restart the server.',
         provider: 'backend_missing_key',
+        requestId: request.id,
       });
     }
 
@@ -126,9 +137,11 @@ app.post('/api/vision/analyze', async (request, response) => {
     const decoded = safeJsonParse(responseBody);
 
     if (!openRouterResponse.ok) {
+      logSecurityEvent(request, 'openrouter_error', { status: openRouterResponse.status });
       return response.status(openRouterResponse.status).json({
         text: 'The backend OpenRouter request failed. Please try again shortly.',
         provider: `backend_openrouter_error_${openRouterResponse.status}`,
+        requestId: request.id,
       });
     }
 
@@ -138,40 +151,80 @@ app.post('/api/vision/analyze', async (request, response) => {
     return response.json({
       text: answer,
       provider: `backend_openrouter:${model}`,
+      requestId: request.id,
     });
   } catch (error) {
-    console.error('Backend analyze request failed:', error.message);
+    logSecurityEvent(request, 'analyze_exception', { message: error.message });
     return response.status(500).json({
       text: 'The backend failed while analyzing the selected frames. Please try again.',
       provider: 'backend_exception',
+      requestId: request.id,
     });
   }
 });
 
-app.use((error, _request, response, next) => {
+app.use((error, request, response, next) => {
   if (!error) {
     return next();
   }
 
   if (error.type === 'entity.too.large') {
+    logSecurityEvent(request, 'payload_too_large');
     return response.status(413).json({
       text: 'The selected frames are too large for the backend request.',
       provider: 'backend_payload_too_large',
+      requestId: request.id,
     });
   }
 
   if (error instanceof SyntaxError && 'body' in error) {
+    logSecurityEvent(request, 'invalid_json');
     return response.status(400).json({
       text: 'The backend received invalid JSON.',
       provider: 'backend_invalid_json',
+      requestId: request.id,
     });
   }
 
+  logSecurityEvent(request, 'request_error', { message: error.message });
   return response.status(500).json({
     text: 'The backend failed before processing the request.',
     provider: 'backend_request_error',
+    requestId: request.id,
   });
 });
+
+function validateStartupConfiguration() {
+  if (!productionMode) {
+    return;
+  }
+
+  const missing = [];
+  if (!process.env.OPENROUTER_API_KEY) {
+    missing.push('OPENROUTER_API_KEY');
+  }
+  if (!backendClientToken) {
+    missing.push('BACKEND_CLIENT_TOKEN');
+  }
+  if (!enforceHttps) {
+    missing.push('ENFORCE_HTTPS=true');
+  }
+
+  if (missing.length > 0) {
+    throw new Error(`Production backend configuration is incomplete: ${missing.join(', ')}`);
+  }
+}
+
+function assignRequestId(request, response, next) {
+  const suppliedId = request.get('x-request-id');
+  request.id = isSafeRequestId(suppliedId) ? suppliedId : crypto.randomUUID();
+  response.setHeader('X-Request-Id', request.id);
+  next();
+}
+
+function isSafeRequestId(value) {
+  return typeof value === 'string' && /^[a-zA-Z0-9._:-]{8,80}$/.test(value);
+}
 
 function securityHeaders(_request, response, next) {
   response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -179,6 +232,45 @@ function securityHeaders(_request, response, next) {
   response.setHeader('Cache-Control', 'no-store');
   response.setHeader('Cross-Origin-Resource-Policy', 'same-site');
   next();
+}
+
+function logRequestLifecycle(request, response, next) {
+  const startedAt = Date.now();
+  response.on('finish', () => {
+    const durationMs = Date.now() - startedAt;
+    console.log(JSON.stringify({
+      event: 'request_completed',
+      requestId: request.id,
+      method: request.method,
+      path: request.path,
+      status: response.statusCode,
+      durationMs,
+      client: getClientLogKey(request),
+    }));
+  });
+  next();
+}
+
+function logSecurityEvent(request, event, details = {}) {
+  console.warn(JSON.stringify({
+    event,
+    requestId: request.id,
+    path: request.path,
+    client: getClientLogKey(request),
+    ...sanitizeLogDetails(details),
+  }));
+}
+
+function sanitizeLogDetails(details) {
+  const sanitized = {};
+  for (const [key, value] of Object.entries(details)) {
+    if (typeof value === 'string') {
+      sanitized[key] = value.replace(/[A-Za-z0-9+/=]{120,}/g, '[redacted_blob]');
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
 }
 
 function buildCorsOptions() {
@@ -211,9 +303,11 @@ function enforceHttpsMiddleware(request, response, next) {
     return next();
   }
 
+  logSecurityEvent(request, 'https_required');
   return response.status(403).json({
     text: 'HTTPS is required for backend requests.',
     provider: 'backend_https_required',
+    requestId: request.id,
   });
 }
 
@@ -227,9 +321,11 @@ function authenticateClient(request, response, next) {
     return next();
   }
 
+  logSecurityEvent(request, 'unauthorized_client');
   return response.status(401).json({
     text: 'The backend rejected this app request.',
     provider: 'backend_unauthorized',
+    requestId: request.id,
   });
 }
 
@@ -239,19 +335,25 @@ function rateLimitRequests(request, response, next) {
   const bucket = rateLimitBuckets.get(key);
 
   if (!bucket || now >= bucket.resetAt) {
-    rateLimitBuckets.set(key, { count: 1, resetAt: now + rateLimitWindowMs });
+    const resetAt = now + rateLimitWindowMs;
+    rateLimitBuckets.set(key, { count: 1, resetAt });
+    setRateLimitHeaders(response, 1, resetAt);
     return next();
   }
 
   if (bucket.count >= rateLimitMaxRequests) {
+    setRateLimitHeaders(response, bucket.count, bucket.resetAt);
     response.setHeader('Retry-After', Math.ceil((bucket.resetAt - now) / 1000));
+    logSecurityEvent(request, 'rate_limited');
     return response.status(429).json({
       text: 'Too many backend requests. Please wait a moment and try again.',
       provider: 'backend_rate_limited',
+      requestId: request.id,
     });
   }
 
   bucket.count += 1;
+  setRateLimitHeaders(response, bucket.count, bucket.resetAt);
   return next();
 }
 
@@ -262,23 +364,43 @@ function enforceDailyQuota(request, response, next) {
 
   if (!bucket || bucket.date !== today) {
     dailyQuotaBuckets.set(key, { date: today, count: 1 });
+    setDailyQuotaHeaders(response, 1);
     return next();
   }
 
   if (bucket.count >= dailyQuotaMaxRequests) {
+    setDailyQuotaHeaders(response, bucket.count);
+    logSecurityEvent(request, 'daily_quota_exceeded');
     return response.status(429).json({
       text: 'Daily backend usage limit reached. Please try again later.',
       provider: 'backend_daily_quota_exceeded',
+      requestId: request.id,
     });
   }
 
   bucket.count += 1;
+  setDailyQuotaHeaders(response, bucket.count);
   return next();
+}
+
+function setRateLimitHeaders(response, used, resetAt) {
+  response.setHeader('X-RateLimit-Limit', rateLimitMaxRequests);
+  response.setHeader('X-RateLimit-Remaining', Math.max(rateLimitMaxRequests - used, 0));
+  response.setHeader('X-RateLimit-Reset', Math.ceil(resetAt / 1000));
+}
+
+function setDailyQuotaHeaders(response, used) {
+  response.setHeader('X-DailyQuota-Limit', dailyQuotaMaxRequests);
+  response.setHeader('X-DailyQuota-Remaining', Math.max(dailyQuotaMaxRequests - used, 0));
 }
 
 function getClientBucketKey(request) {
   const identifier = request.get('x-client-token') || request.ip || 'unknown';
   return crypto.createHash('sha256').update(identifier).digest('hex');
+}
+
+function getClientLogKey(request) {
+  return getClientBucketKey(request).slice(0, 12);
 }
 
 function safeTokenEquals(providedToken, expectedToken) {
