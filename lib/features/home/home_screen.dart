@@ -2,6 +2,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_config.dart';
+import '../../core/security/ai_safety_moderation_service.dart';
 import '../../core/security/local_auth_service.dart';
 import '../../core/security/privacy_guard_service.dart';
 import '../../core/security/security_settings_service.dart';
@@ -37,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _keyframeSelector = const KeyframeSelector();
   final _ttsService = TtsService();
   final _privacyGuardService = const PrivacyGuardService();
+  final _safetyModerationService = const AiSafetyModerationService();
   final _securitySettingsService = const SecuritySettingsService();
   final _temporaryFrameCleanupService = const TemporaryFrameCleanupService();
   final _localAuthService = LocalAuthService();
@@ -145,6 +147,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return;
       }
 
+      final moderation = _safetyModerationService.moderateUserCommand(command);
+      if (!moderation.allowed) {
+        await _ttsService.speak(moderation.message);
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _recognizedCommand = command;
+          _status = moderation.message;
+          _isBusy = false;
+        });
+        return;
+      }
+
       // 2) Classify the NLP intent before camera processing.
       final intent = _intentClassifier.classify(command);
       setState(() {
@@ -216,16 +232,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         selectedFrames: safeFrames,
         allFrames: analyzedFrames,
       );
+      final moderatedResponse =
+          _safetyModerationService.moderateAssistantResponse(response.text);
 
       // 7) Speak the final answer for accessibility.
-      await _ttsService.speak(response.text);
+      await _ttsService.speak(moderatedResponse);
 
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _assistantResponse = response.text;
+        _assistantResponse = moderatedResponse;
         _status = 'Done. ${safeFrames.length} privacy-safe keyframes selected.';
         _isBusy = false;
       });
