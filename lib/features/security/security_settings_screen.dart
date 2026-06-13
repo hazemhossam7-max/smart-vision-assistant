@@ -62,11 +62,15 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
     setState(() {
       _privacyModeEnabled = values[0];
       _cloudConsentGiven = values[1];
-      _saveHistoryEnabled = values[2];
+      _saveHistoryEnabled = values[2] && !values[4];
       _biometricLockEnabled = values[3];
       _rootRiskDetected = values[4];
       _loading = false;
     });
+
+    if (values[2] && values[4]) {
+      await widget._settingsService.setSaveHistoryEnabled(false);
+    }
   }
 
   Future<void> _setPrivacyMode(bool value) async {
@@ -82,6 +86,11 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
   }
 
   Future<void> _setSaveHistory(bool value) async {
+    if (value && _rootRiskDetected) {
+      _showMessage('Save History is disabled because root risk was detected.');
+      return;
+    }
+
     if (value && !await _authenticate()) {
       return;
     }
@@ -158,12 +167,18 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
                 ),
                 Semantics(
                   label: 'Save History toggle',
-                  hint: 'Requires authentication when enabled.',
+                  hint: _rootRiskDetected
+                      ? 'Disabled because root risk was detected.'
+                      : 'Requires authentication when enabled.',
                   child: SwitchListTile(
                     title: const Text('Save History'),
-                    subtitle: const Text('Off by default. Enable only if you want local history later.'),
+                    subtitle: Text(
+                      _rootRiskDetected
+                          ? 'Disabled because this device may be rooted.'
+                          : 'Off by default. Enable only if you want local history later.',
+                    ),
                     value: _saveHistoryEnabled,
-                    onChanged: _setSaveHistory,
+                    onChanged: _rootRiskDetected ? null : _setSaveHistory,
                   ),
                 ),
                 ListTile(
