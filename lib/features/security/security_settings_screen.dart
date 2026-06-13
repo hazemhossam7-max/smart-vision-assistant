@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/security/device_security_service.dart';
 import '../../core/security/local_auth_service.dart';
+import '../../core/security/security_audit_logger.dart';
 import '../../core/security/security_settings_service.dart';
 import '../../core/security/temporary_frame_cleanup_service.dart';
 import '../vision/frame_metadata.dart';
@@ -13,16 +14,19 @@ class SecuritySettingsScreen extends StatefulWidget {
     SecuritySettingsService settingsService = const SecuritySettingsService(),
     TemporaryFrameCleanupService cleanupService = const TemporaryFrameCleanupService(),
     DeviceSecurityService deviceSecurityService = const DeviceSecurityService(),
+    SecurityAuditLogger auditLogger = const SecurityAuditLogger(),
     LocalAuthService? localAuthService,
   })  : _settingsService = settingsService,
         _cleanupService = cleanupService,
         _deviceSecurityService = deviceSecurityService,
+        _auditLogger = auditLogger,
         _localAuthService = localAuthService;
 
   final List<FrameMetadata> knownFrames;
   final SecuritySettingsService _settingsService;
   final TemporaryFrameCleanupService _cleanupService;
   final DeviceSecurityService _deviceSecurityService;
+  final SecurityAuditLogger _auditLogger;
   final LocalAuthService? _localAuthService;
 
   @override
@@ -31,6 +35,7 @@ class SecuritySettingsScreen extends StatefulWidget {
 
 class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
   late final LocalAuthService _localAuthService;
+  late final TextEditingController _guardianPhoneController;
 
   bool _loading = true;
   bool _privacyModeEnabled = true;
@@ -38,11 +43,13 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
   bool _saveHistoryEnabled = false;
   bool _biometricLockEnabled = false;
   bool _rootRiskDetected = false;
+  bool _sensitiveDocumentWarningEnabled = true;
 
   @override
   void initState() {
     super.initState();
     _localAuthService = widget._localAuthService ?? LocalAuthService();
+    _guardianPhoneController = TextEditingController();
     _loadSettings();
   }
 
@@ -53,7 +60,9 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
       widget._settingsService.isSaveHistoryEnabled(),
       widget._settingsService.isBiometricLockEnabled(),
       widget._deviceSecurityService.isRootRiskDetected(),
+      widget._settingsService.isSensitiveDocumentWarningEnabled(),
     ]);
+    final guardianPhone = await widget._settingsService.readGuardianPhoneNumber();
 
     if (!mounted) {
       return;
@@ -65,6 +74,8 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
       _saveHistoryEnabled = values[2] && !values[4];
       _biometricLockEnabled = values[3];
       _rootRiskDetected = values[4];
+      _sensitiveDocumentWarningEnabled = values[5];
+      _guardianPhoneController.text = guardianPhone ?? '';
       _loading = false;
     });
 
@@ -79,6 +90,7 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
     }
 
     await widget._settingsService.setPrivacyModeEnabled(value);
+    widget._auditLogger.logSecuritySettingChanged(settingName: 'privacy_mode');
     if (!mounted) {
       return;
     }
@@ -96,6 +108,7 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
     }
 
     await widget._settingsService.setSaveHistoryEnabled(value);
+    widget._auditLogger.logSecuritySettingChanged(settingName: 'save_history');
     if (!mounted) {
       return;
     }
@@ -113,10 +126,34 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
     }
 
     await widget._settingsService.setBiometricLockEnabled(value);
+    widget._auditLogger.logSecuritySettingChanged(settingName: 'biometric_lock');
     if (!mounted) {
       return;
     }
     setState(() => _biometricLockEnabled = value);
+  }
+
+  Future<void> _setSensitiveDocumentWarning(bool value) async {
+    await widget._settingsService.setSensitiveDocumentWarningEnabled(value);
+    widget._auditLogger.logSecuritySettingChanged(
+      settingName: 'sensitive_document_warning',
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _sensitiveDocumentWarningEnabled = value);
+  }
+
+  Future<void> _saveGuardianPhone() async {
+    if (!await _authenticate()) {
+      return;
+    }
+
+    await widget._settingsService.setGuardianPhoneNumber(
+      _guardianPhoneController.text.trim(),
+    );
+    widget._auditLogger.logSecuritySettingChanged(settingName: 'guardian_phone');
+    _showMessage('Guardian contact saved.');
   }
 
   Future<void> _deleteLocalData() async {
@@ -144,6 +181,12 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  void dispose() {
+    _guardianPhoneController.dispose();
+    super.dispose();
   }
 
   @override
@@ -181,6 +224,12 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
                     onChanged: _rootRiskDetected ? null : _setSaveHistory,
                   ),
                 ),
+                SwitchListTile(
+                  title: const Text('Sensitive Document Warning'),
+                  subtitle: const Text('Warn before analyzing IDs, cards, passwords, or medical papers.'),
+                  value: _sensitiveDocumentWarningEnabled,
+                  onChanged: _setSensitiveDocumentWarning,
+                ),
                 ListTile(
                   title: const Text('Cloud Consent'),
                   subtitle: Text(_cloudConsentGiven ? 'Given' : 'Not given'),
@@ -202,6 +251,21 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
                     value: _biometricLockEnabled,
                     onChanged: _setBiometricLock,
                   ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _guardianPhoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Guardian phone number',
+                    helperText: 'Used only to open call or SMS confirmation.',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                FilledButton.tonal(
+                  onPressed: _saveGuardianPhone,
+                  child: const Text('Save Guardian Contact'),
                 ),
                 const SizedBox(height: 16),
                 FilledButton.tonal(
