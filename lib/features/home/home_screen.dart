@@ -202,6 +202,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return;
       }
 
+      if (AppConfig.productionBuild && AppConfig.requireImageRedaction) {
+        const message = 'Image redaction is required for this build before cloud analysis.';
+        await _ttsService.speak(message);
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _allFrames = analyzedFrames;
+          _selectedFrames = const [];
+          _assistantResponse = '';
+          _status = message;
+          _isBusy = false;
+        });
+        return;
+      }
+
       final hasConsent = await _ensureCloudConsent(intent);
       if (!hasConsent) {
         await _ttsService.speak('Cloud analysis cancelled.');
