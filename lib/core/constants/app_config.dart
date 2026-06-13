@@ -40,6 +40,10 @@ class AppConfig {
   static const backendCertificateSha256 = String.fromEnvironment(
     'BACKEND_CERT_SHA256',
   );
+  static const requireImageRedaction = bool.fromEnvironment(
+    'REQUIRE_IMAGE_REDACTION',
+    defaultValue: false,
+  );
   static const geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
   static const openAiApiKey = String.fromEnvironment('OPENAI_API_KEY');
   static const openRouterApiKey = String.fromEnvironment('OPENROUTER_API_KEY');
