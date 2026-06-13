@@ -4,7 +4,11 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "health": "node -e \"fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "cors": "^2.8.5",
