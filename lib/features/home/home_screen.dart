@@ -1,10 +1,13 @@
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_config.dart';
 import '../../core/security/ai_safety_moderation_service.dart';
 import '../../core/security/local_auth_service.dart';
+import '../../core/security/permission_service.dart';
 import '../../core/security/privacy_guard_service.dart';
+import '../../core/security/security_audit_logger.dart';
 import '../../core/security/security_settings_service.dart';
 import '../../core/security/temporary_frame_cleanup_service.dart';
 import '../../core/services/logger_service.dart';
@@ -12,6 +15,7 @@ import '../ai/ai_service.dart';
 import '../ai/ai_service_factory.dart';
 import '../camera/camera_service.dart';
 import '../camera/frame_capture_service.dart';
+import '../emergency/emergency_service.dart';
 import '../security/security_settings_screen.dart';
 import '../tts/tts_service.dart';
 import '../vision/frame_metadata.dart';
@@ -31,8 +35,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _logger = const LoggerService();
+  final _auditLogger = const SecurityAuditLogger();
   final _cameraService = CameraService();
   final _voiceService = VoiceService();
+  final _permissionService = const PermissionService();
   final _intentClassifier = IntentClassifier();
   final _frameAnalyzer = FrameQualityAnalyzer();
   final _keyframeSelector = const KeyframeSelector();
@@ -41,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _safetyModerationService = const AiSafetyModerationService();
   final _securitySettingsService = const SecuritySettingsService();
   final _temporaryFrameCleanupService = const TemporaryFrameCleanupService();
+  final _emergencyService = const EmergencyService();
   final _localAuthService = LocalAuthService();
   final AiService _aiService = AiServiceFactory.create();
 
@@ -49,7 +56,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _cameraReady = false;
   bool _voiceReady = false;
   bool _isBusy = false;
-  String _status = 'Initializing camera and voice services...';
+  String _status = 'Initializing voice assistant...';
   String _recognizedCommand = '';
   VisionIntent? _intent;
   String _assistantResponse = '';
@@ -70,20 +77,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _initializeServices() async {
     try {
-      final cameraReady = await _cameraService.initialize();
-      final voiceReady = await _voiceService.initialize();
       await _ttsService.initialize();
+      _debugWarnIfInsecureBackendUrl();
 
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _cameraReady = cameraReady;
-        _voiceReady = voiceReady;
-        _status = cameraReady && voiceReady
-            ? 'Ready. Press the microphone and speak a command.'
-            : 'Some permissions are missing. Please allow camera and microphone access.';
+        _status = 'Ready. Press the microphone and speak a command.';
       });
     } catch (error) {
       _logger.info('Initialization failed: $error');
@@ -96,6 +98,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  void _debugWarnIfInsecureBackendUrl() {
+    if (!kDebugMode) {
+      return;
+    }
+
+    final uri = Uri.tryParse(AppConfig.backendBaseUrl);
+    if (uri == null || uri.scheme != 'http') {
+      return;
+    }
+
+    if (uri.host == '127.0.0.1' || uri.host == 'localhost') {
+      return;
+    }
+
+    debugPrint('Warning: insecure backend URL. Use HTTPS in production.');
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final controller = _cameraService.controller;
@@ -105,13 +124,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (state == AppLifecycleState.inactive) {
       _cameraService.dispose();
+      _cameraReady = false;
     } else if (state == AppLifecycleState.resumed) {
       _initializeServices();
     }
   }
 
   Future<void> _handleVoiceCommand() async {
-    if (!_cameraReady || !_voiceReady || _isBusy) {
+    if (_isBusy) {
       return;
     }
 
@@ -124,11 +144,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _assistantResponse = '';
       _allFrames = const [];
       _selectedFrames = const [];
-      _status = 'Listening...';
+      _status = 'Checking microphone permission...';
     });
 
     try {
-      // 1) Record the spoken command and convert it to text.
+      final microphoneGranted = await _permissionService.requestMicrophone();
+      _auditLogger.logPermissionEvent(
+        permission: 'microphone',
+        granted: microphoneGranted,
+      );
+      if (!microphoneGranted) {
+        await _stopWithMessage('Microphone permission is needed to hear your command.');
+        return;
+      }
+
+      final voiceReady = await _voiceService.initialize();
+      if (!voiceReady) {
+        await _stopWithMessage('Speech recognition is not ready. Please try again.');
+        return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _voiceReady = true;
+          _status = 'Listening...';
+        });
+      }
+
       final command = await _voiceService.listenForCommand(
         onPartialResult: (text) {
           if (!mounted) {
@@ -139,11 +181,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
 
       if (command.trim().isEmpty) {
-        await _ttsService.speak('I did not hear a command. Please try again.');
-        setState(() {
-          _status = 'No command recognized. Try again.';
-          _isBusy = false;
-        });
+        await _stopWithMessage('I did not hear a command. Please try again.');
         return;
       }
 
@@ -161,30 +199,65 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return;
       }
 
-      // 2) Classify the NLP intent before camera processing.
       final intent = _intentClassifier.classify(command);
       setState(() {
         _recognizedCommand = command;
         _intent = intent;
-        _status = 'Capturing multiple frames...';
+        _status = intent == VisionIntent.emergencyHelp
+            ? 'Opening emergency mode...'
+            : 'Checking camera permission...';
       });
 
-      // 3) Capture a burst, not a single image, so retrieval has choices.
+      if (intent == VisionIntent.emergencyHelp) {
+        await _handleEmergency(command);
+        return;
+      }
+
+      if (!await _confirmSensitiveDocumentIfNeeded(intent)) {
+        await _stopWithMessage('Text reading cancelled.');
+        return;
+      }
+
+      final intentPermissionsGranted =
+          await _permissionService.ensurePermissionsForIntent(intent);
+      _auditLogger.logPermissionEvent(
+        permission: intent == VisionIntent.navigationHelp ? 'camera_location' : 'camera',
+        granted: intentPermissionsGranted,
+      );
+      if (!intentPermissionsGranted) {
+        await _stopWithMessage(_permissionDeniedMessage(intent));
+        return;
+      }
+
+      final cameraReady = await _cameraService.initialize();
+      if (!cameraReady) {
+        await _stopWithMessage('Camera is not ready. Please try again.');
+        return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _cameraReady = true;
+          _status = 'Capturing multiple frames...';
+        });
+      }
+
       final rawFrames = await _frameCaptureService.captureBurst(
         duration: const Duration(milliseconds: AppConfig.captureDurationMs),
         fps: AppConfig.captureFps,
       );
 
-      // 4) Score every frame locally using computer vision features.
       setState(() => _status = 'Analyzing frame quality and uniqueness...');
       analyzedFrames = await _analyzeFrames(rawFrames, intent);
 
-      // 5) Remove weak frames and keep only the top keyframes.
       final selectedFrames = _keyframeSelector.selectTopFrames(
         frames: analyzedFrames,
         topK: AppConfig.topKeyframes,
       );
       final safeFrames = _privacyGuardService.filterSafeKeyframes(selectedFrames);
+      for (final frame in selectedFrames.where((frame) => !safeFrames.contains(frame))) {
+        _auditLogger.logFrameRejected(reason: frame.rejectionReasons.join(','));
+      }
 
       if (safeFrames.isEmpty) {
         const message = 'I could not find a safe clear frame to analyze. Please try again.';
@@ -241,7 +314,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             : 'Sending ${safeFrames.length} privacy-safe keyframes to secure backend...';
       });
 
-      // 6) Send only privacy-safe keyframes plus metadata to the AI layer.
+      _auditLogger.logAiRequest(
+        provider: _aiService.runtimeType.toString(),
+        intent: intent.label,
+        selectedFrameCount: safeFrames.length,
+      );
       final response = await _aiService.analyzeKeyframes(
         userCommand: command,
         intent: intent,
@@ -251,7 +328,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final moderatedResponse =
           _safetyModerationService.moderateAssistantResponse(response.text);
 
-      // 7) Speak the final answer for accessibility.
       await _ttsService.speak(moderatedResponse);
 
       if (!mounted) {
@@ -282,6 +358,93 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         await _temporaryFrameCleanupService.deleteTemporaryFrameFiles(analyzedFrames);
       }
     }
+  }
+
+  Future<void> _handleEmergency(String command) async {
+    final includeLocation = _intentClassifier.wantsEmergencyLocation(command);
+    if (includeLocation) {
+      final locationGranted = await _permissionService.requestLocationWhenNeeded();
+      _auditLogger.logPermissionEvent(
+        permission: 'location',
+        granted: locationGranted,
+      );
+      if (!locationGranted) {
+        await _stopWithMessage('Location permission is needed to share location.');
+        return;
+      }
+    }
+
+    _auditLogger.logEmergencyTriggered(locationIncluded: includeLocation);
+    final result = await _emergencyService.triggerEmergency(
+      includeLocation: includeLocation,
+    );
+    await _ttsService.speak(result.message);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _assistantResponse = result.message;
+      _status = result.message;
+      _isBusy = false;
+    });
+  }
+
+  Future<bool> _confirmSensitiveDocumentIfNeeded(VisionIntent intent) async {
+    if (intent != VisionIntent.textReading) {
+      return true;
+    }
+
+    if (!await _securitySettingsService.isSensitiveDocumentWarningEnabled()) {
+      return true;
+    }
+
+    const warning =
+        'This may capture private text such as IDs, cards, passwords, or medical papers. Continue only if you want this text analyzed.';
+    await _ttsService.speak(warning);
+
+    if (!mounted) {
+      return false;
+    }
+
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('Sensitive Document Warning'),
+              content: const Text(warning),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Continue'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+  }
+
+  Future<void> _stopWithMessage(String message) async {
+    await _ttsService.speak(message);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _status = message;
+      _isBusy = false;
+    });
+  }
+
+  String _permissionDeniedMessage(VisionIntent intent) {
+    if (intent == VisionIntent.navigationHelp) {
+      return 'Camera and location permission are needed for navigation help.';
+    }
+    return 'Camera permission is needed to describe what is around you.';
   }
 
   Future<bool> _ensureCloudConsent(VisionIntent intent) async {
@@ -320,6 +483,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ) ??
         false;
 
+    _auditLogger.logCloudConsent(accepted: accepted);
     if (accepted) {
       await _securitySettingsService.setCloudConsentGiven(true);
     }
