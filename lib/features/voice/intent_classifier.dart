@@ -5,6 +5,7 @@ enum VisionIntent {
   objectSearch,
   navigationHelp,
   currencyRecognition,
+  emergencyHelp,
 }
 
 extension VisionIntentLabel on VisionIntent {
@@ -22,6 +23,8 @@ extension VisionIntentLabel on VisionIntent {
         return 'navigation_help';
       case VisionIntent.currencyRecognition:
         return 'currency_recognition';
+      case VisionIntent.emergencyHelp:
+        return 'emergency_help';
     }
   }
 }
@@ -29,6 +32,17 @@ extension VisionIntentLabel on VisionIntent {
 class IntentClassifier {
   VisionIntent classify(String command) {
     final text = command.toLowerCase();
+
+    if (_containsAny(text, const [
+      'help me',
+      'emergency',
+      'sos',
+      'call my guardian',
+      'send my location',
+      'i need help',
+    ])) {
+      return VisionIntent.emergencyHelp;
+    }
 
     if (_containsAny(text, const [
       'currency',
@@ -100,6 +114,11 @@ class IntentClassifier {
     }
 
     return VisionIntent.sceneDescription;
+  }
+
+  bool wantsEmergencyLocation(String command) {
+    final text = command.toLowerCase();
+    return _containsAny(text, const ['send my location', 'share my location', 'with location']);
   }
 
   bool _containsAny(String text, List<String> keywords) {
