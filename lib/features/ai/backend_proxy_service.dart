@@ -40,11 +40,9 @@ class BackendProxyService implements AiService {
         '${(_baseUrl ?? AppConfig.backendBaseUrl).replaceFirst(RegExp(r'/$'), '')}/api/vision/analyze',
       );
 
-      if (_isInsecureProductionUrl(endpoint)) {
-        return const AiResponse(
-          provider: 'backend_insecure_url',
-          text: 'The production backend must use HTTPS. Please update the backend URL.',
-        );
+      final configurationError = _validateProductionNetworkConfiguration(endpoint);
+      if (configurationError != null) {
+        return configurationError;
       }
 
       final response = await client.post(
@@ -97,6 +95,26 @@ class BackendProxyService implements AiService {
       headers['X-Client-Token'] = AppConfig.backendClientToken;
     }
     return headers;
+  }
+
+  AiResponse? _validateProductionNetworkConfiguration(Uri endpoint) {
+    if (_isInsecureProductionUrl(endpoint)) {
+      return const AiResponse(
+        provider: 'backend_insecure_url',
+        text: 'The production backend must use HTTPS. Please update the backend URL.',
+      );
+    }
+
+    if (AppConfig.productionBuild &&
+        AppConfig.requireCertificatePinning &&
+        AppConfig.backendCertificateSha256.isEmpty) {
+      return const AiResponse(
+        provider: 'backend_missing_certificate_pin',
+        text: 'The production backend certificate pin is missing.',
+      );
+    }
+
+    return null;
   }
 
   bool _isInsecureProductionUrl(Uri endpoint) {
