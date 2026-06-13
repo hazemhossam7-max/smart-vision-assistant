@@ -11,6 +11,7 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 - Add configurable JSON/body and image-size limits.
 - Validate supported intents, selected frame count, all frame count, frame metadata, and selected image presence.
 - Add production HTTPS enforcement switch with `ENFORCE_HTTPS=true`.
+- Add production startup checks for required secrets and HTTPS enforcement.
 - Disable `X-Powered-By` and add conservative response headers.
 - Disable browser CORS by default; allow explicit `CORS_ALLOWED_ORIGINS` if needed.
 - Prevent production Flutter builds from using direct AI providers unless explicitly allowed.
@@ -54,6 +55,7 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 - Redact API keys, backend tokens, and base64 images.
 - Suppress app demo logs in production builds.
 - Keep backend logs generic and avoid raw OpenRouter error bodies.
+- Add backend request IDs and structured operational logs without image payloads.
 
 ## Phase 7: APK Hardening - Started
 
@@ -112,14 +114,15 @@ flutter build apk --release --obfuscate --split-debug-info=build/symbols
   - Encrypted backup policy.
   - Abuse prevention for emergency messaging.
 
-## Phase 14: Production Deployment - Pending
+## Phase 14: Production Deployment - Started
 
-- Deploy the backend behind HTTPS using a managed platform or reverse proxy.
-- Set production environment variables in the host platform, not in committed files.
-- Set `ENFORCE_HTTPS=true`.
-- Set `TRUST_PROXY=true` only when the backend is behind a trusted proxy/load balancer.
-- Configure domain allowlists and network firewall rules where available.
-- Add health checks and uptime monitoring for `/health`.
+- Add `backend/Dockerfile` and `backend/.dockerignore` for containerized deployment.
+- Add backend healthcheck support.
+- Document Docker run configuration in `README.md`.
+- Pending: deploy the backend behind HTTPS using a managed platform or reverse proxy.
+- Pending: set production environment variables in the host platform, not in committed files.
+- Pending: configure domain allowlists and network firewall rules where available.
+- Pending: add hosted uptime monitoring for `/health`.
 
 ## Phase 15: Stronger Authentication - Pending
 
@@ -134,18 +137,19 @@ flutter build apk --release --obfuscate --split-debug-info=build/symbols
 
 - Add backend in-memory rate limiting.
 - Add a configurable in-memory daily request quota with `DAILY_QUOTA_MAX_REQUESTS`.
+- Add rate-limit and daily-quota response headers.
 - Pending: replace in-memory controls with Redis or a managed rate-limit/quota service for multi-instance deployments.
 - Pending: add per-user, per-device, and per-IP quotas backed by authenticated identity.
 - Pending: add OpenRouter spend caps, alerting, and cost dashboards.
-- Pending: add request IDs to backend logs, but never log API keys or base64 images.
 
-## Phase 17: Privacy and Data Governance - Pending
+## Phase 17: Privacy and Data Governance - Started
 
-- Publish a privacy policy explaining camera frame processing and third-party AI processing.
-- Add explicit user consent copy to onboarding if onboarding is added.
-- Avoid storing image frames unless a user explicitly opts in.
-- Define retention rules for logs and metadata.
-- Review OpenRouter/model-provider retention settings and terms.
+- Add `docs/security/PRIVACY_POLICY_DRAFT.md`.
+- Pending: publish a reviewed privacy policy explaining camera frame processing and third-party AI processing.
+- Pending: add explicit user consent copy to onboarding if onboarding is added.
+- Pending: avoid storing image frames unless a user explicitly opts in.
+- Pending: define retention rules for logs and metadata.
+- Pending: review OpenRouter/model-provider retention settings and terms.
 
 ## Phase 18: Threat Model and Penetration Testing - Started
 
