@@ -51,6 +51,9 @@ class AppConfig {
     'OPENROUTER_MODEL',
     defaultValue: 'google/gemini-2.5-flash',
   );
+
+  // Local Android development uses adb reverse to reach this backend URL.
+  // Production builds must pass an HTTPS backend URL with BACKEND_BASE_URL.
   static const backendBaseUrl = String.fromEnvironment(
     'BACKEND_BASE_URL',
     defaultValue: 'http://127.0.0.1:3000',
