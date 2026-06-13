@@ -9,7 +9,7 @@ class CameraService {
   bool get isInitialized => _controller?.value.isInitialized ?? false;
 
   Future<bool> initialize() async {
-    final cameraStatus = await Permission.camera.request();
+    final cameraStatus = await Permission.camera.status;
     if (!cameraStatus.isGranted) {
       return false;
     }
