@@ -69,13 +69,15 @@ flutter build apk --release --obfuscate --split-debug-info=build/symbols
 
 - Add Android method-channel root-risk checks for test-keys and common `su` paths.
 - Show device integrity status in Security & Privacy settings.
+- Block Save History on root-risk devices and automatically disable it if a root-risk signal appears.
 - Pending: Play Integrity API or stronger attestation for production decisions.
 
-## Phase 9: AI Safety Moderation Layer - Started
+## Phase 9: AI Safety Moderation Layer - Implemented MVP
 
 - Add local command moderation for obviously unsafe requests.
 - Add response moderation for unsafe navigation certainty phrases.
-- Pending: backend-side moderation, policy tests, model-based moderation, and safety eval suite.
+- Add backend-side prompt moderation for high-risk requests before calling OpenRouter.
+- Pending: model-based moderation, policy tests, and safety eval suite.
 
 ## Phase 10: Certificate Pinning - Guard Added, Verification Pending
 
@@ -128,13 +130,14 @@ flutter build apk --release --obfuscate --split-debug-info=build/symbols
 - Per-user quotas and revocation.
 - Server-side session auditing.
 
-## Phase 16: Abuse and Cost Controls - Pending
+## Phase 16: Abuse and Cost Controls - Started
 
-- Replace in-memory rate limiting with Redis or a managed rate limit service for multi-instance deployments.
-- Add per-user, per-device, and per-IP quotas.
-- Add daily spend caps for OpenRouter calls.
-- Add alerting for spikes, repeated validation failures, and high-cost usage.
-- Add request IDs to backend logs, but never log API keys or base64 images.
+- Add backend in-memory rate limiting.
+- Add a configurable in-memory daily request quota with `DAILY_QUOTA_MAX_REQUESTS`.
+- Pending: replace in-memory controls with Redis or a managed rate-limit/quota service for multi-instance deployments.
+- Pending: add per-user, per-device, and per-IP quotas backed by authenticated identity.
+- Pending: add OpenRouter spend caps, alerting, and cost dashboards.
+- Pending: add request IDs to backend logs, but never log API keys or base64 images.
 
 ## Phase 17: Privacy and Data Governance - Pending
 
