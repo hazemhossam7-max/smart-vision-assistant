@@ -54,6 +54,7 @@ The app currently captures a short burst and selects the top 3 keyframes.
 - The Security & Privacy screen protects sensitive actions with device biometric/PIN auth when enabled.
 - OpenRouter requests ask for privacy-conscious routing with `provider.data_collection=deny` and `provider.zdr=true`.
 - The backend is the secure production path. Direct OpenRouter remains only for demos/testing.
+- Backend responses include request IDs so support/debugging does not require logging image payloads.
 
 ## Egyptian Currency Model
 
@@ -125,6 +126,28 @@ flutter run -d 07748251CL002087 ^
 
 Production should use an HTTPS backend URL instead of local cleartext HTTP.
 
+## Backend Deployment
+
+The backend includes a production Dockerfile:
+
+```bash
+cd backend
+docker build -t smart-vision-assistant-backend .
+docker run --rm -p 3000:3000 \
+  -e NODE_ENV=production \
+  -e OPENROUTER_API_KEY=your_openrouter_key \
+  -e BACKEND_CLIENT_TOKEN=make_this_a_long_random_value \
+  -e ENFORCE_HTTPS=true \
+  -e TRUST_PROXY=true \
+  smart-vision-assistant-backend
+```
+
+In production, terminate HTTPS at a trusted host, reverse proxy, or load
+balancer, then forward requests to the container. Set `TRUST_PROXY=true` only
+when that proxy is trusted and it sends `X-Forwarded-Proto`. The backend refuses
+to start with `NODE_ENV=production` unless `OPENROUTER_API_KEY`,
+`BACKEND_CLIENT_TOKEN`, and `ENFORCE_HTTPS=true` are configured.
+
 ## API Keys
 
 No API keys are hardcoded. The recommended provider is the backend proxy:
@@ -148,16 +171,21 @@ flutter run -d 07748251CL002087 \
 For production builds, force the backend provider and HTTPS backend URL:
 
 ```bash
-flutter run --release \
+flutter build apk --release --obfuscate --split-debug-info=build/symbols \
   --dart-define=PRODUCTION_BUILD=true \
   --dart-define=AI_PROVIDER=backend \
   --dart-define=BACKEND_BASE_URL=https://your-backend.example.com \
-  --dart-define=BACKEND_CLIENT_TOKEN=make_this_a_long_random_value
+  --dart-define=BACKEND_CLIENT_TOKEN=make_this_a_long_random_value \
+  --dart-define=REQUIRE_CERTIFICATE_PINNING=true \
+  --dart-define=BACKEND_CERT_SHA256=your_backend_spki_sha256 \
+  --dart-define=REQUIRE_IMAGE_REDACTION=true
 ```
 
-Production backend environment should set `ENFORCE_HTTPS=true`, keep secrets in
-the host secret manager or environment settings, and avoid committing `.env`.
-See `SECURITY_PIPELINE.md` for the remaining hardening plan.
+`REQUIRE_IMAGE_REDACTION=true` should stay enabled for public production until
+real on-device face/PII redaction is implemented. Production backend environment
+should set `ENFORCE_HTTPS=true`, keep secrets in the host secret manager or
+environment settings, and avoid committing `.env`. See `SECURITY_PIPELINE.md`
+for the remaining hardening plan.
 
 ## Platform Setup
 
