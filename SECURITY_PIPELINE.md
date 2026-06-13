@@ -6,9 +6,7 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 
 - Move OpenRouter API access out of Flutter and into `backend/server.js`.
 - Read `OPENROUTER_API_KEY` from backend environment only.
-- Add `BACKEND_CLIENT_TOKEN` support:
-  - Flutter sends it as `X-Client-Token` when `--dart-define=BACKEND_CLIENT_TOKEN=...` is provided.
-  - Backend rejects `/api/*` requests when `BACKEND_CLIENT_TOKEN` is configured and the header is missing or wrong.
+- Add `BACKEND_CLIENT_TOKEN` support.
 - Add in-memory rate limiting for `/api/*` routes.
 - Add configurable JSON/body and image-size limits.
 - Validate supported intents, selected frame count, all frame count, frame metadata, and selected image presence.
@@ -26,7 +24,7 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 - Add `TemporaryFrameCleanupService` to delete temporary captured frame files after the pipeline finishes.
 - Keep Privacy Mode on by default so temporary image files are not kept after response.
 
-## Phase 3: OpenRouter Privacy Settings - Implemented MVP
+## Phase 3: OpenRouter Privacy Settings and Prompt Injection Protection - Implemented MVP
 
 - Add OpenRouter provider routing options:
   - `data_collection: deny`
@@ -39,11 +37,7 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 
 - Add `flutter_secure_storage`.
 - Add `SecureStorageService` wrapper so secure storage is not used directly throughout the app.
-- Add `SecuritySettingsService` with secure defaults:
-  - `privacy_mode_enabled`: true
-  - `cloud_consent_given`: false
-  - `save_history_enabled`: false
-  - `biometric_lock_enabled`: false
+- Add `SecuritySettingsService` with secure defaults.
 - Ask for Cloud AI consent before the first backend/cloud analysis and store the result securely.
 
 ## Phase 5: Biometric/PIN Protection - Implemented MVP
@@ -54,7 +48,69 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 - Require authentication for sensitive settings/actions when appropriate.
 - Keep the main microphone/camera flow fast and unlocked for accessibility.
 
-## Phase 6: Production Deployment - Pending
+## Phase 6: Logging Review - Implemented MVP
+
+- Centralize app logs through `LoggerService`.
+- Redact API keys, backend tokens, and base64 images.
+- Suppress app demo logs in production builds.
+- Keep backend logs generic and avoid raw OpenRouter error bodies.
+
+## Phase 7: APK Hardening - Started
+
+- Enable Android release minification/resource shrinking with R8/ProGuard.
+- Add conservative ProGuard keep rules for Flutter and local auth.
+- Release builds should also use Flutter obfuscation:
+
+```bash
+flutter build apk --release --obfuscate --split-debug-info=build/symbols
+```
+
+## Phase 8: Root Detection - Implemented Basic Signal
+
+- Add Android method-channel root-risk checks for test-keys and common `su` paths.
+- Show device integrity status in Security & Privacy settings.
+- Pending: Play Integrity API or stronger attestation for production decisions.
+
+## Phase 9: AI Safety Moderation Layer - Started
+
+- Add local command moderation for obviously unsafe requests.
+- Add response moderation for unsafe navigation certainty phrases.
+- Pending: backend-side moderation, policy tests, model-based moderation, and safety eval suite.
+
+## Phase 10: Certificate Pinning - Guard Added, Verification Pending
+
+- Add production flags:
+  - `REQUIRE_CERTIFICATE_PINNING`
+  - `BACKEND_CERT_SHA256`
+- Fail closed if production requires pinning but no pin is configured.
+- Pending: implement runtime certificate/SPKI verification after a stable production backend domain and certificate lifecycle exist.
+
+## Phase 11: Face/PII Redaction Before Upload - Pending
+
+- Required before public production for camera frames in sensitive settings.
+- Recommended implementation:
+  - On-device face detection / ML Kit.
+  - Blur faces and sensitive text regions before upload when privacy mode is on.
+  - Preserve accessibility value by sending redacted but still useful keyframes.
+- Do not ship a fake redaction toggle without real redaction.
+
+## Phase 12: Voice Biometric Authentication - Pending / Needs Specialist Design
+
+- Current app uses device biometric/PIN via `local_auth`.
+- True voice biometrics needs enrollment, anti-spoofing/liveness, secure templates, and false reject/accessibility review.
+- Do not use simple voice matching as an authentication control.
+
+## Phase 13: End-to-End Encrypted Emergency Contact System - Pending
+
+- Current secure settings reserve a guardian phone key for future local storage.
+- E2E encrypted sync/contact workflow needs:
+  - Key generation and rotation.
+  - Contact verification.
+  - Lost-device recovery.
+  - Encrypted backup policy.
+  - Abuse prevention for emergency messaging.
+
+## Phase 14: Production Deployment - Pending
 
 - Deploy the backend behind HTTPS using a managed platform or reverse proxy.
 - Set production environment variables in the host platform, not in committed files.
@@ -63,7 +119,7 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 - Configure domain allowlists and network firewall rules where available.
 - Add health checks and uptime monitoring for `/health`.
 
-## Phase 7: Stronger Authentication - Pending
+## Phase 15: Stronger Authentication - Pending
 
 `BACKEND_CLIENT_TOKEN` is a first production gate, but a static mobile token can still be extracted from an APK/IPA. Upgrade to one of these before public release:
 
@@ -72,7 +128,7 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 - Per-user quotas and revocation.
 - Server-side session auditing.
 
-## Phase 8: Abuse and Cost Controls - Pending
+## Phase 16: Abuse and Cost Controls - Pending
 
 - Replace in-memory rate limiting with Redis or a managed rate limit service for multi-instance deployments.
 - Add per-user, per-device, and per-IP quotas.
@@ -80,7 +136,7 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 - Add alerting for spikes, repeated validation failures, and high-cost usage.
 - Add request IDs to backend logs, but never log API keys or base64 images.
 
-## Phase 9: Privacy and Data Governance - Pending
+## Phase 17: Privacy and Data Governance - Pending
 
 - Publish a privacy policy explaining camera frame processing and third-party AI processing.
 - Add explicit user consent copy to onboarding if onboarding is added.
@@ -88,9 +144,8 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 - Define retention rules for logs and metadata.
 - Review OpenRouter/model-provider retention settings and terms.
 
-## Phase 10: Mobile Network Hardening - Pending
+## Phase 18: Threat Model and Penetration Testing - Started
 
-- Use HTTPS-only production backend URLs.
-- Remove local cleartext Android config from release builds or isolate it to debug builds.
-- Consider certificate pinning after the production domain and certificate lifecycle are stable.
-- Add a release checklist that verifies `PRODUCTION_BUILD=true`, `AI_PROVIDER=backend`, and no direct provider API keys are passed to Flutter.
+- Add `docs/security/THREAT_MODEL.md`.
+- Add `docs/security/PENTEST_REPORT.md` template/checklist.
+- Pending: execute tests, record evidence, and close findings.
