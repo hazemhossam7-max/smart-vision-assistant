@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/security/device_security_service.dart';
 import '../../core/security/local_auth_service.dart';
 import '../../core/security/security_settings_service.dart';
 import '../../core/security/temporary_frame_cleanup_service.dart';
@@ -11,14 +12,17 @@ class SecuritySettingsScreen extends StatefulWidget {
     this.knownFrames = const [],
     SecuritySettingsService settingsService = const SecuritySettingsService(),
     TemporaryFrameCleanupService cleanupService = const TemporaryFrameCleanupService(),
+    DeviceSecurityService deviceSecurityService = const DeviceSecurityService(),
     LocalAuthService? localAuthService,
   })  : _settingsService = settingsService,
         _cleanupService = cleanupService,
+        _deviceSecurityService = deviceSecurityService,
         _localAuthService = localAuthService;
 
   final List<FrameMetadata> knownFrames;
   final SecuritySettingsService _settingsService;
   final TemporaryFrameCleanupService _cleanupService;
+  final DeviceSecurityService _deviceSecurityService;
   final LocalAuthService? _localAuthService;
 
   @override
@@ -33,6 +37,7 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
   bool _cloudConsentGiven = false;
   bool _saveHistoryEnabled = false;
   bool _biometricLockEnabled = false;
+  bool _rootRiskDetected = false;
 
   @override
   void initState() {
@@ -47,6 +52,7 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
       widget._settingsService.hasCloudConsent(),
       widget._settingsService.isSaveHistoryEnabled(),
       widget._settingsService.isBiometricLockEnabled(),
+      widget._deviceSecurityService.isRootRiskDetected(),
     ]);
 
     if (!mounted) {
@@ -58,6 +64,7 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
       _cloudConsentGiven = values[1];
       _saveHistoryEnabled = values[2];
       _biometricLockEnabled = values[3];
+      _rootRiskDetected = values[4];
       _loading = false;
     });
   }
@@ -162,6 +169,14 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
                 ListTile(
                   title: const Text('Cloud Consent'),
                   subtitle: Text(_cloudConsentGiven ? 'Given' : 'Not given'),
+                ),
+                ListTile(
+                  title: const Text('Device Integrity'),
+                  subtitle: Text(
+                    _rootRiskDetected
+                        ? 'Root risk detected. Avoid storing sensitive data on this device.'
+                        : 'No root risk detected by basic checks.',
+                  ),
                 ),
                 Semantics(
                   label: 'Biometric or phone lock toggle',
