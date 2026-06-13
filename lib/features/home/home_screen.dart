@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +18,7 @@ import '../ai/ai_service_factory.dart';
 import '../camera/camera_service.dart';
 import '../camera/frame_capture_service.dart';
 import '../emergency/emergency_service.dart';
+import '../face/face_recognition_service.dart';
 import '../security/security_settings_screen.dart';
 import '../tts/tts_service.dart';
 import '../vision/frame_metadata.dart';
@@ -49,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _temporaryFrameCleanupService = const TemporaryFrameCleanupService();
   final _emergencyService = const EmergencyService();
   final _localAuthService = LocalAuthService();
+  final _faceRecognitionService = FaceRecognitionService();
   final AiService _aiService = AiServiceFactory.create();
 
   late final FrameCaptureService _frameCaptureService;
@@ -153,13 +157,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         granted: microphoneGranted,
       );
       if (!microphoneGranted) {
-        await _stopWithMessage('Microphone permission is needed to hear your command.');
+        await _stopWithMessage(
+            'Microphone permission is needed to hear your command.');
         return;
       }
 
       final voiceReady = await _voiceService.initialize();
       if (!voiceReady) {
-        await _stopWithMessage('Speech recognition is not ready. Please try again.');
+        await _stopWithMessage(
+            'Speech recognition is not ready. Please try again.');
         return;
       }
 
@@ -201,13 +207,41 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _recognizedCommand = command;
         _intent = intent;
-        _status = intent == VisionIntent.emergencyHelp
-            ? 'Opening emergency mode...'
-            : 'Checking camera permission...';
+        _status = switch (intent) {
+          VisionIntent.emergencyHelp => 'Opening emergency mode...',
+          VisionIntent.faceRegistration => 'Preparing face registration...',
+          _ => 'Checking camera permission...',
+        };
       });
 
       if (intent == VisionIntent.emergencyHelp) {
         await _handleEmergency(command);
+        return;
+      }
+
+      if (intent == VisionIntent.faceRegistration) {
+        final cameraGranted = await _permissionService.requestCamera();
+        _auditLogger.logPermissionEvent(
+          permission: 'camera',
+          granted: cameraGranted,
+        );
+        if (!cameraGranted) {
+          await _stopWithMessage(
+              'Camera permission is needed to register this face.');
+          return;
+        }
+
+        final cameraReady = await _cameraService.initialize();
+        if (!cameraReady) {
+          await _stopWithMessage('Camera is not ready. Please try again.');
+          return;
+        }
+
+        if (mounted) {
+          setState(() => _cameraReady = true);
+        }
+
+        await _handleFaceRegistration(command);
         return;
       }
 
@@ -219,7 +253,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final intentPermissionsGranted =
           await _permissionService.ensurePermissionsForIntent(intent);
       _auditLogger.logPermissionEvent(
-        permission: intent == VisionIntent.navigationHelp ? 'camera_location' : 'camera',
+        permission: intent == VisionIntent.navigationHelp
+            ? 'camera_location'
+            : 'camera',
         granted: intentPermissionsGranted,
       );
       if (!intentPermissionsGranted) {
@@ -252,13 +288,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         frames: analyzedFrames,
         topK: AppConfig.topKeyframes,
       );
-      final safeFrames = _privacyGuardService.filterSafeKeyframes(selectedFrames);
-      for (final frame in selectedFrames.where((frame) => !safeFrames.contains(frame))) {
+      final safeFrames =
+          _privacyGuardService.filterSafeKeyframes(selectedFrames);
+      for (final frame
+          in selectedFrames.where((frame) => !safeFrames.contains(frame))) {
         _auditLogger.logFrameRejected(reason: frame.rejectionReasons.join(','));
       }
 
       if (safeFrames.isEmpty) {
-        const message = 'I could not find a safe clear frame to analyze. Please try again.';
+        const message =
+            'I could not find a safe clear frame to analyze. Please try again.';
         await _ttsService.speak(message);
         if (!mounted) {
           return;
@@ -273,8 +312,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return;
       }
 
+      String? knownFaceName;
+      if (intent == VisionIntent.faceRecognition) {
+        final faceResult = await _recognizeFaceForAi(safeFrames.first.filePath);
+        if (faceResult == null) {
+          setState(() {
+            _allFrames = analyzedFrames;
+            _selectedFrames = safeFrames;
+            _isBusy = false;
+          });
+          return;
+        }
+        knownFaceName = faceResult;
+      }
+
       if (AppConfig.productionBuild && AppConfig.requireImageRedaction) {
-        const message = 'Image redaction is required for this build before cloud analysis.';
+        const message =
+            'Image redaction is required for this build before cloud analysis.';
         await _ttsService.speak(message);
         if (!mounted) {
           return;
@@ -322,6 +376,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         intent: intent,
         selectedFrames: safeFrames,
         allFrames: analyzedFrames,
+        knownFaceName: knownFaceName,
       );
       final moderatedResponse =
           _safetyModerationService.moderateAssistantResponse(response.text);
@@ -351,23 +406,184 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _isBusy = false;
       });
     } finally {
-      final cleanupFrames = await _securitySettingsService.isPrivacyModeEnabled();
+      final cleanupFrames =
+          await _securitySettingsService.isPrivacyModeEnabled();
       if (cleanupFrames && analyzedFrames.isNotEmpty) {
-        await _temporaryFrameCleanupService.deleteTemporaryFrameFiles(analyzedFrames);
+        await _temporaryFrameCleanupService
+            .deleteTemporaryFrameFiles(analyzedFrames);
       }
     }
+  }
+
+  Future<void> _handleFaceRegistration(String command) async {
+    XFile? frame;
+
+    try {
+      var name = _intentClassifier.extractFaceRegistrationName(command);
+      if (name == null || name.trim().isEmpty) {
+        const question = 'What is this person\'s name?';
+        setState(() => _status = question);
+        await _ttsService.speak(question);
+
+        name = await _voiceService.listenForCommand(
+          onPartialResult: (text) {
+            if (!mounted) {
+              return;
+            }
+            setState(() => _recognizedCommand = '$command\nName: $text');
+          },
+        );
+      }
+
+      name = _cleanSpokenName(name);
+      if (name.isEmpty) {
+        const message = 'I did not hear the name clearly. Please try again.';
+        await _ttsService.speak(message);
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _status = message;
+          _assistantResponse = message;
+          _isBusy = false;
+        });
+        return;
+      }
+
+      const lookingMessage = 'Looking for a face.';
+      setState(() => _status = lookingMessage);
+      await _ttsService.speak(lookingMessage);
+
+      frame = await _cameraService.captureFrame();
+      final result = await _faceRecognitionService.registerFace(
+        frameFile: frame,
+        name: name,
+      );
+      final message = _registrationMessage(result, name);
+
+      await _ttsService.speak(message);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _assistantResponse = message;
+        _status = message;
+        _isBusy = false;
+      });
+    } catch (error) {
+      _logger.info('Face registration failed: $error');
+      const message =
+          'Sorry, something went wrong while registering this face.';
+      await _ttsService.speak(message);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _assistantResponse = message;
+        _status = message;
+        _isBusy = false;
+      });
+    } finally {
+      final cleanupFrames =
+          await _securitySettingsService.isPrivacyModeEnabled();
+      final framePath = frame?.path;
+      if (cleanupFrames && framePath != null) {
+        try {
+          await File(framePath).delete();
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<String?> _recognizeFaceForAi(String framePath) async {
+    const lookingMessage = 'Looking for a face.';
+    setState(() => _status = lookingMessage);
+    await _ttsService.speak(lookingMessage);
+
+    final result = await _faceRecognitionService.recognizeFace(
+      frameFile: XFile(framePath),
+    );
+
+    if (result.isSuccess) {
+      final name = result.name ?? 'unknown person';
+      await _ttsService.speak('Face detected. $name is in front of you.');
+      return name;
+    }
+
+    final message = _recognitionMessage(result);
+    await _ttsService.speak(message);
+    if (!mounted) {
+      return null;
+    }
+    setState(() {
+      _status = message;
+      _assistantResponse = message;
+    });
+
+    if (result.isUnknown) {
+      return 'unknown person';
+    }
+
+    return null;
+  }
+
+  String _registrationMessage(FaceRecognitionResult result, String name) {
+    switch (result.status) {
+      case FaceRecognitionStatus.success:
+        return '$name has been registered successfully.';
+      case FaceRecognitionStatus.noFace:
+        return 'I cannot see a face clearly. Please try again.';
+      case FaceRecognitionStatus.multipleFaces:
+        return 'I see more than one face. Please focus on one person.';
+      case FaceRecognitionStatus.modelMissing:
+        return 'The face recognition model is missing. Please add the model file and try again.';
+      case FaceRecognitionStatus.storageError:
+        return 'I could not save this face on the device. Please try again.';
+      case FaceRecognitionStatus.noRegisteredFaces:
+      case FaceRecognitionStatus.unknown:
+        return 'I cannot see a face clearly. Please try again.';
+    }
+  }
+
+  String _recognitionMessage(FaceRecognitionResult result) {
+    switch (result.status) {
+      case FaceRecognitionStatus.noRegisteredFaces:
+        return 'I do not have any registered faces yet.';
+      case FaceRecognitionStatus.noFace:
+        return 'I cannot see a face clearly.';
+      case FaceRecognitionStatus.multipleFaces:
+        return 'I see more than one face. Please focus on one person.';
+      case FaceRecognitionStatus.unknown:
+        return 'I do not recognize this person.';
+      case FaceRecognitionStatus.modelMissing:
+        return 'The face recognition model is missing. Please add the model file and try again.';
+      case FaceRecognitionStatus.storageError:
+        return 'I could not read saved faces on this device. Please try again.';
+      case FaceRecognitionStatus.success:
+        final name = result.name ?? 'This person';
+        return '$name is in front of you.';
+    }
+  }
+
+  String _cleanSpokenName(String name) {
+    return name
+        .replaceAll(RegExp(r'[^\w\s-]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   Future<void> _handleEmergency(String command) async {
     final includeLocation = _intentClassifier.wantsEmergencyLocation(command);
     if (includeLocation) {
-      final locationGranted = await _permissionService.requestLocationWhenNeeded();
+      final locationGranted =
+          await _permissionService.requestLocationWhenNeeded();
       _auditLogger.logPermissionEvent(
         permission: 'location',
         granted: locationGranted,
       );
       if (!locationGranted) {
-        await _stopWithMessage('Location permission is needed to share location.');
+        await _stopWithMessage(
+            'Location permission is needed to share location.');
         return;
       }
     }
@@ -512,7 +728,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _openSecuritySettings() async {
     if (await _securitySettingsService.isBiometricLockEnabled()) {
-      final authenticated = await _localAuthService.authenticateForSensitiveAction(
+      final authenticated =
+          await _localAuthService.authenticateForSensitiveAction(
         reason: 'Authenticate to open Security and Privacy settings.',
       );
       if (!authenticated) {
@@ -536,6 +753,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _voiceService.stop();
     _ttsService.stop();
+    _faceRecognitionService.close();
     _cameraService.dispose();
     super.dispose();
   }

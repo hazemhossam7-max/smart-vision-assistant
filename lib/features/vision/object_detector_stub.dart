@@ -23,6 +23,11 @@ class ObjectDetectorStub {
         return clamp01(0.25 + edgeDensity * 0.55 + centerContrast * 0.20);
       case VisionIntent.currencyRecognition:
         return clamp01(0.40 + centerContrast * 0.35 + edgeDensity * 0.25);
+      case VisionIntent.faceRegistration:
+      case VisionIntent.faceRecognition:
+        return clamp01(0.45 + centerContrast * 0.35 + edgeDensity * 0.20);
+      case VisionIntent.emergencyHelp:
+        return clamp01(0.30 + centerContrast * 0.35 + edgeDensity * 0.35);
       case VisionIntent.sceneDescription:
         return clamp01(0.30 + centerContrast * 0.35 + edgeDensity * 0.35);
     }

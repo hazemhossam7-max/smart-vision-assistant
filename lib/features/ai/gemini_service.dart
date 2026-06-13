@@ -12,6 +12,7 @@ class GeminiService implements AiService {
     required VisionIntent intent,
     required List<FrameMetadata> selectedFrames,
     required List<FrameMetadata> allFrames,
+    String? knownFaceName,
   }) async {
     // Placeholder for Gemini Live / Gemini multimodal integration.
     // Later, send selectedFrames file bytes plus selectedFrames.map((e) => e.toJson()).
@@ -25,8 +26,20 @@ class GeminiService implements AiService {
       text:
           'I understood your request as ${intent.label}. I captured ${allFrames.length} frames, '
           'filtered them locally, and selected ${selectedFrames.length} important keyframes. '
+          '${_faceSummary(knownFaceName)}'
           '$selectedSummary This is a local demo response until Gemini is connected.',
     );
+  }
+
+  String _faceSummary(String? knownFaceName) {
+    final name = knownFaceName?.trim();
+    if (name == null || name.isEmpty) {
+      return '';
+    }
+    if (name.toLowerCase() == 'unknown person') {
+      return 'Local face recognition did not match a saved person. ';
+    }
+    return 'Known face detected: $name. ';
   }
 
   String _selectedSummary(List<FrameMetadata> frames) {

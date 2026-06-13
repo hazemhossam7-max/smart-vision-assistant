@@ -30,10 +30,11 @@ class OpenRouterService implements AiService {
     required VisionIntent intent,
     required List<FrameMetadata> selectedFrames,
     required List<FrameMetadata> allFrames,
+    String? knownFaceName,
   }) async {
-    final apiKey = AppConfig.openRouterApiKey;
+    const apiKey = AppConfig.openRouterApiKey;
     if (apiKey.isEmpty) {
-      return AiResponse(
+      return const AiResponse(
         provider: 'openrouter_no_key',
         text:
             'OpenRouter is selected, but no API key was provided. Run the app with OPENROUTER_API_KEY.',
@@ -43,7 +44,8 @@ class OpenRouterService implements AiService {
     if (selectedFrames.isEmpty) {
       return const AiResponse(
         provider: 'openrouter_no_frames',
-        text: 'I could not find a good camera frame to analyze. Please try again.',
+        text:
+            'I could not find a good camera frame to analyze. Please try again.',
       );
     }
 
@@ -70,7 +72,8 @@ class OpenRouterService implements AiService {
           'messages': [
             {
               'role': 'system',
-              'content': _promptSecurityService.buildSystemPrompt(intent: intent),
+              'content':
+                  _promptSecurityService.buildSystemPrompt(intent: intent),
             },
             {
               'role': 'user',
@@ -79,6 +82,7 @@ class OpenRouterService implements AiService {
                 intent: intent,
                 selectedFrames: selectedFrames,
                 allFrames: allFrames,
+                knownFaceName: knownFaceName,
               ),
             },
           ],
@@ -125,6 +129,7 @@ class OpenRouterService implements AiService {
     required VisionIntent intent,
     required List<FrameMetadata> selectedFrames,
     required List<FrameMetadata> allFrames,
+    String? knownFaceName,
   }) async {
     final content = <Map<String, Object>>[
       {
@@ -134,6 +139,7 @@ class OpenRouterService implements AiService {
           intent: intent,
           selectedFrames: selectedFrames,
           allFrames: allFrames,
+          knownFaceName: knownFaceName,
         ),
       },
     ];
@@ -156,6 +162,7 @@ class OpenRouterService implements AiService {
     required VisionIntent intent,
     required List<FrameMetadata> selectedFrames,
     required List<FrameMetadata> allFrames,
+    String? knownFaceName,
   }) {
     final buffer = StringBuffer()
       ..writeln(_promptSecurityService.buildUserContextPrompt(
@@ -166,6 +173,13 @@ class OpenRouterService implements AiService {
         'Captured ${allFrames.length} frames and selected '
         '${selectedFrames.length} keyframes.',
       );
+
+    final faceContext = _buildFaceContext(knownFaceName);
+    if (faceContext != null) {
+      buffer
+        ..writeln()
+        ..writeln(faceContext);
+    }
 
     if (intent == VisionIntent.currencyRecognition) {
       buffer
@@ -189,6 +203,17 @@ class OpenRouterService implements AiService {
 
     buffer.writeln('Answer in 1 to 3 short sentences for a blind user.');
     return buffer.toString();
+  }
+
+  String? _buildFaceContext(String? knownFaceName) {
+    final name = knownFaceName?.trim();
+    if (name == null || name.isEmpty) {
+      return null;
+    }
+    if (name.toLowerCase() == 'unknown person') {
+      return 'Local face recognition did not match a saved person. Refer to them as an unknown person if relevant.';
+    }
+    return 'Known face detected locally: $name. Use this identity in your answer if relevant.';
   }
 
   String _extractText(Object? content) {

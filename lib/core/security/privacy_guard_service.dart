@@ -46,6 +46,12 @@ class PrivacyGuardService {
         return 'Selected camera frames may be sent to the AI for obstacle detection.';
       case VisionIntent.currencyRecognition:
         return 'Selected camera frames may be sent to the AI for currency recognition.';
+      case VisionIntent.emergencyHelp:
+        return 'Emergency help may request only the permissions needed for the emergency action.';
+      case VisionIntent.faceRegistration:
+        return 'Face registration is local and does not send face embeddings to the AI.';
+      case VisionIntent.faceRecognition:
+        return 'Selected camera frames may be sent to the AI, with only the locally recognized name added as text context.';
     }
   }
 }

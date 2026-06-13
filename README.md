@@ -32,6 +32,8 @@ OpenRouter API key stays off the mobile app.
 - `navigation_help`
 - `currency_recognition`
 - `emergency_help`
+- `face_registration`
+- `face_recognition`
 
 ## Local Keyframe Retrieval
 
@@ -85,6 +87,69 @@ Reported upstream metrics:
 Important: the included model is a PyTorch `.pt` artifact. Flutter on-device
 inference should use an exported `.tflite` file. The model card includes the
 recommended export command and expected asset path.
+
+## Local Face Recognition
+
+Face registration and matching run on the device. The app uses ML Kit face
+detection to find one face in the camera frame, crops that face locally, then
+uses a MobileFaceNet/FaceNet-style TensorFlow Lite model to generate an
+embedding. Saved names and embeddings are stored in the app documents directory
+as `registered_faces.json`.
+
+Privacy notes:
+
+- Face embeddings and saved names are not uploaded to Gemini, OpenRouter, or the backend.
+- Only the recognized name, for example `Adham`, is added as text context to the visual AI prompt.
+- Registration does not use cloud analysis or cloud consent.
+
+Supported voice examples:
+
+- `Register this face`
+- `Save this face`
+- `Remember this person`
+- `Register this face as Adham`
+- `This is Adham`
+- `Who is in front of me?`
+- `Who is standing in front of me?`
+- `Who is here?`
+- `Who is beside me?`
+- `Who is shouting in front of me?`
+- `Describe the person in front of me`
+
+Expected model file:
+
+- Path: `assets/models/mobilefacenet.tflite`
+- Input: one RGB face crop, `112 x 112 x 3`, float normalized with `(value - 127.5) / 128.0`
+- Output: one embedding vector, currently configured as 192 floats
+
+This repository includes only a placeholder at that path. Replace it with a real
+MobileFaceNet/FaceNet `.tflite` model before running face registration on a
+device. If your model uses a different input size or embedding length, update
+`FaceEmbeddingService` in `lib/features/face/face_embedding_service.dart`.
+
+The asset is declared in `pubspec.yaml`:
+
+```yaml
+flutter:
+  assets:
+    - assets/models/mobilefacenet.tflite
+```
+
+After replacing the model:
+
+```bash
+flutter pub get
+flutter run
+```
+
+Manual test flow:
+
+1. Put one person clearly in front of the camera.
+2. Tap the microphone and say `Register this face as Adham`.
+3. Wait for `Adham has been registered successfully.`
+4. Close and reopen the app to confirm persistence.
+5. Tap the microphone and say `Who is in front of me?`
+6. The app should identify the saved local face and include `Adham` in the spoken answer.
 
 ## Backend Proxy
 

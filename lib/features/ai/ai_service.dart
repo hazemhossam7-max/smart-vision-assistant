@@ -17,5 +17,6 @@ abstract class AiService {
     required VisionIntent intent,
     required List<FrameMetadata> selectedFrames,
     required List<FrameMetadata> allFrames,
+    String? knownFaceName,
   });
 }

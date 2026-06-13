@@ -32,11 +32,13 @@ class BackendProxyService implements AiService {
     required VisionIntent intent,
     required List<FrameMetadata> selectedFrames,
     required List<FrameMetadata> allFrames,
+    String? knownFaceName,
   }) async {
     if (selectedFrames.isEmpty) {
       return const AiResponse(
         provider: 'backend_no_frames',
-        text: 'I could not find a good camera frame to analyze. Please try again.',
+        text:
+            'I could not find a good camera frame to analyze. Please try again.',
       );
     }
 
@@ -48,7 +50,8 @@ class BackendProxyService implements AiService {
         '${(_baseUrl ?? AppConfig.backendBaseUrl).replaceFirst(RegExp(r'/$'), '')}/api/vision/analyze',
       );
 
-      final configurationError = _validateProductionNetworkConfiguration(endpoint);
+      final configurationError =
+          _validateProductionNetworkConfiguration(endpoint);
       if (configurationError != null) {
         return configurationError;
       }
@@ -59,6 +62,8 @@ class BackendProxyService implements AiService {
         body: jsonEncode({
           'userCommand': userCommand,
           'intent': intent.label,
+          if (knownFaceName != null && knownFaceName.trim().isNotEmpty)
+            'knownFaceName': knownFaceName.trim(),
           'selectedFrames': await _selectedFramePayload(selectedFrames),
           'allFrames': allFrames.map(_frameMetadataPayload).toList(),
         }),
@@ -82,9 +87,10 @@ class BackendProxyService implements AiService {
       }
 
       return AiResponse(
-        provider: responseProvider is String && responseProvider.trim().isNotEmpty
-            ? responseProvider.trim()
-            : 'backend',
+        provider:
+            responseProvider is String && responseProvider.trim().isNotEmpty
+                ? responseProvider.trim()
+                : 'backend',
         text: responseText is String && responseText.trim().isNotEmpty
             ? responseText.trim()
             : 'The backend returned an empty response. Please try again.',
@@ -93,7 +99,8 @@ class BackendProxyService implements AiService {
       _auditLogger.logBackendError(provider: 'backend', statusCode: null);
       return const AiResponse(
         provider: 'backend_exception',
-        text: 'The secure backend request failed. Please check that the backend is running and try again.',
+        text:
+            'The secure backend request failed. Please check that the backend is running and try again.',
       );
     } finally {
       if (shouldCloseClient) {
@@ -115,7 +122,8 @@ class BackendProxyService implements AiService {
     if (_isInsecureProductionUrl(endpoint)) {
       return const AiResponse(
         provider: 'backend_insecure_url',
-        text: 'The production backend must use HTTPS. Please update the backend URL.',
+        text:
+            'The production backend must use HTTPS. Please update the backend URL.',
       );
     }
 

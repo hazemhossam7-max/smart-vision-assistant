@@ -15,5 +15,39 @@ void main() {
         VisionIntent.currencyRecognition,
       );
     });
+
+    test('detects face registration commands and extracts names', () {
+      final classifier = IntentClassifier();
+
+      expect(
+        classifier.classify('Register this face as Adham'),
+        VisionIntent.faceRegistration,
+      );
+      expect(
+        classifier.classify('Remember this person'),
+        VisionIntent.faceRegistration,
+      );
+      expect(
+        classifier.extractFaceRegistrationName('This is Adham'),
+        'Adham',
+      );
+    });
+
+    test('detects face recognition commands before obstacle commands', () {
+      final classifier = IntentClassifier();
+
+      expect(
+        classifier.classify('Who is in front of me?'),
+        VisionIntent.faceRecognition,
+      );
+      expect(
+        classifier.classify('Who is shouting in front of me?'),
+        VisionIntent.faceRecognition,
+      );
+      expect(
+        classifier.classify('Describe the person in front of me'),
+        VisionIntent.faceRecognition,
+      );
+    });
   });
 }
