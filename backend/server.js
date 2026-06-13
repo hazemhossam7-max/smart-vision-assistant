@@ -14,6 +14,7 @@ const maxBase64ImageBytes = Number(process.env.MAX_BASE64_IMAGE_BYTES || 5 * 102
 const maxUserCommandChars = Number(process.env.MAX_USER_COMMAND_CHARS || 500);
 const rateLimitWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 60 * 1000);
 const rateLimitMaxRequests = Number(process.env.RATE_LIMIT_MAX_REQUESTS || 20);
+const dailyQuotaMaxRequests = Number(process.env.DAILY_QUOTA_MAX_REQUESTS || 300);
 const backendClientToken = process.env.BACKEND_CLIENT_TOKEN || '';
 const enforceHttps = process.env.ENFORCE_HTTPS === 'true';
 const trustedProxy = process.env.TRUST_PROXY === 'true';
@@ -27,7 +28,24 @@ const allowedIntents = new Set([
   'currency_recognition',
 ]);
 
+const blockedCommandPatterns = [
+  'make a weapon',
+  'build a bomb',
+  'bypass security',
+  'steal',
+  'harm yourself',
+  'hurt someone',
+];
+
+const unsafeResponsePatterns = [
+  'guaranteed safe',
+  'definitely safe to cross',
+  'ignore traffic',
+  'you can run across',
+];
+
 const rateLimitBuckets = new Map();
+const dailyQuotaBuckets = new Map();
 
 if (trustedProxy) {
   app.set('trust proxy', 1);
@@ -40,6 +58,7 @@ app.use(express.json({ limit: requestBodyLimit }));
 app.use('/api/', enforceHttpsMiddleware);
 app.use('/api/', authenticateClient);
 app.use('/api/', rateLimitRequests);
+app.use('/api/', enforceDailyQuota);
 
 app.get('/health', (_request, response) => {
   response.json({ status: 'ok' });
@@ -52,6 +71,14 @@ app.post('/api/vision/analyze', async (request, response) => {
       return response.status(400).json({
         text: validationError,
         provider: 'backend_validation_error',
+      });
+    }
+
+    const moderationError = moderateUserCommand(request.body.userCommand);
+    if (moderationError) {
+      return response.status(400).json({
+        text: moderationError,
+        provider: 'backend_moderation_blocked',
       });
     }
 
@@ -105,9 +132,11 @@ app.post('/api/vision/analyze', async (request, response) => {
       });
     }
 
-    const answer = extractText(decoded);
+    const answer = moderateAssistantResponse(
+      extractText(decoded) || 'The model returned an empty response. Please try again.',
+    );
     return response.json({
-      text: answer || 'The model returned an empty response. Please try again.',
+      text: answer,
       provider: `backend_openrouter:${model}`,
     });
   } catch (error) {
@@ -205,8 +234,7 @@ function authenticateClient(request, response, next) {
 }
 
 function rateLimitRequests(request, response, next) {
-  const identifier = request.get('x-client-token') || request.ip || 'unknown';
-  const key = crypto.createHash('sha256').update(identifier).digest('hex');
+  const key = getClientBucketKey(request);
   const now = Date.now();
   const bucket = rateLimitBuckets.get(key);
 
@@ -227,10 +255,51 @@ function rateLimitRequests(request, response, next) {
   return next();
 }
 
+function enforceDailyQuota(request, response, next) {
+  const key = getClientBucketKey(request);
+  const today = new Date().toISOString().slice(0, 10);
+  const bucket = dailyQuotaBuckets.get(key);
+
+  if (!bucket || bucket.date !== today) {
+    dailyQuotaBuckets.set(key, { date: today, count: 1 });
+    return next();
+  }
+
+  if (bucket.count >= dailyQuotaMaxRequests) {
+    return response.status(429).json({
+      text: 'Daily backend usage limit reached. Please try again later.',
+      provider: 'backend_daily_quota_exceeded',
+    });
+  }
+
+  bucket.count += 1;
+  return next();
+}
+
+function getClientBucketKey(request) {
+  const identifier = request.get('x-client-token') || request.ip || 'unknown';
+  return crypto.createHash('sha256').update(identifier).digest('hex');
+}
+
 function safeTokenEquals(providedToken, expectedToken) {
   const provided = Buffer.from(providedToken);
   const expected = Buffer.from(expectedToken);
   return provided.length === expected.length && crypto.timingSafeEqual(provided, expected);
+}
+
+function moderateUserCommand(command) {
+  const text = command.toLowerCase();
+  const blocked = blockedCommandPatterns.some((pattern) => text.includes(pattern));
+  return blocked ? 'I cannot help with that request.' : null;
+}
+
+function moderateAssistantResponse(answer) {
+  const text = answer.toLowerCase();
+  const risky = unsafeResponsePatterns.some((pattern) => text.includes(pattern));
+  if (!risky) {
+    return answer;
+  }
+  return `${answer} Please verify carefully and do not rely on this as a safety guarantee.`;
 }
 
 function validateAnalyzeRequest(body) {
