@@ -10,12 +10,12 @@ class VoiceService {
   bool get isListening => _speech.isListening;
 
   Future<bool> initialize() async {
-    final microphoneStatus = await Permission.microphone.request();
+    final microphoneStatus = await Permission.microphone.status;
     if (!microphoneStatus.isGranted) {
       return false;
     }
 
-    final speechStatus = await Permission.speech.request();
+    final speechStatus = await Permission.speech.status;
     if (!speechStatus.isGranted && !speechStatus.isLimited) {
       return false;
     }
