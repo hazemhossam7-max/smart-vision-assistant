@@ -14,12 +14,14 @@ OpenRouter API key stays off the mobile app.
 1. The user presses the large microphone button.
 2. Speech is converted to text using `speech_to_text`.
 3. The command is classified into one of the supported intents.
-4. The camera captures a short burst of frames.
-5. Each frame is scored locally using clarity, brightness, uniqueness, object importance, and motion/change.
-6. Bad frames are filtered out.
-7. The top 3 keyframes are selected.
-8. The backend proxy receives only selected frames plus metadata and calls OpenRouter.
-9. The response is spoken with TTS and displayed on screen.
+4. Emergency/SOS commands open the phone or SMS confirmation flow without camera capture.
+5. Vision commands request camera/location only when needed.
+6. The camera captures a short burst of frames.
+7. Each frame is scored locally using clarity, brightness, uniqueness, object importance, and motion/change.
+8. Bad frames are filtered out.
+9. The top 3 keyframes are selected.
+10. The backend proxy receives only selected frames plus metadata and calls OpenRouter.
+11. The response is spoken with TTS and displayed on screen.
 
 ## Supported Intents
 
@@ -29,6 +31,7 @@ OpenRouter API key stays off the mobile app.
 - `obstacle_detection`
 - `navigation_help`
 - `currency_recognition`
+- `emergency_help`
 
 ## Local Keyframe Retrieval
 
@@ -48,13 +51,17 @@ The app currently captures a short burst and selects the top 3 keyframes.
 
 - Privacy Mode defaults to on.
 - The app asks for Cloud AI consent before the first backend/cloud analysis.
+- Sensitive text-reading commands show a warning before capturing IDs, cards, passwords, or medical papers.
 - Cloud consent and privacy settings are stored with `flutter_secure_storage`.
 - Selected keyframes are filtered by `PrivacyGuardService` before upload.
 - Temporary camera frame files are deleted after the pipeline finishes when Privacy Mode is enabled.
+- Microphone, camera, and location permissions are requested only when needed for the current action.
 - The Security & Privacy screen protects sensitive actions with device biometric/PIN auth when enabled.
+- Guardian contact is stored securely and used only to open call/SMS confirmation for Emergency/SOS mode.
 - OpenRouter requests ask for privacy-conscious routing with `provider.data_collection=deny` and `provider.zdr=true`.
 - The backend is the secure production path. Direct OpenRouter remains only for demos/testing.
 - Backend responses include request IDs so support/debugging does not require logging image payloads.
+- Backend app-integrity enforcement is available behind `REQUIRE_APP_INTEGRITY=true` for production hardening.
 
 ## Egyptian Currency Model
 
@@ -148,6 +155,9 @@ when that proxy is trusted and it sends `X-Forwarded-Proto`. The backend refuses
 to start with `NODE_ENV=production` unless `OPENROUTER_API_KEY`,
 `BACKEND_CLIENT_TOKEN`, and `ENFORCE_HTTPS=true` are configured.
 
+Set `REQUIRE_APP_INTEGRITY=true` only after replacing the current scaffold with
+real Firebase App Check or Play Integrity verification.
+
 ## API Keys
 
 No API keys are hardcoded. The recommended provider is the backend proxy:
@@ -171,7 +181,7 @@ flutter run -d 07748251CL002087 \
 For production builds, force the backend provider and HTTPS backend URL:
 
 ```bash
-flutter build apk --release --obfuscate --split-debug-info=build/symbols \
+flutter build apk --release --obfuscate --split-debug-info=build/debug-info \
   --dart-define=PRODUCTION_BUILD=true \
   --dart-define=AI_PROVIDER=backend \
   --dart-define=BACKEND_BASE_URL=https://your-backend.example.com \
@@ -185,7 +195,7 @@ flutter build apk --release --obfuscate --split-debug-info=build/symbols \
 real on-device face/PII redaction is implemented. Production backend environment
 should set `ENFORCE_HTTPS=true`, keep secrets in the host secret manager or
 environment settings, and avoid committing `.env`. See `SECURITY_PIPELINE.md`
-for the remaining hardening plan.
+and `SECURITY_CHECKLIST.md` for the remaining hardening plan.
 
 ## Platform Setup
 
@@ -201,6 +211,8 @@ Then add camera and microphone permission descriptions to the generated platform
   - `android.permission.CAMERA`
   - `android.permission.RECORD_AUDIO`
   - `android.permission.INTERNET`
+  - `android.permission.ACCESS_FINE_LOCATION`
+  - `android.permission.ACCESS_COARSE_LOCATION`
   - `android.permission.USE_BIOMETRIC`
 - iOS: `ios/Runner/Info.plist`
   - `NSCameraUsageDescription`
