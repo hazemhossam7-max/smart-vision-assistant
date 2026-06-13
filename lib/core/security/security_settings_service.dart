@@ -10,6 +10,8 @@ class SecuritySettingsService {
   static const saveHistoryEnabledKey = 'save_history_enabled';
   static const biometricLockEnabledKey = 'biometric_lock_enabled';
   static const guardianPhoneNumberKey = 'guardian_phone_number';
+  static const sensitiveDocumentWarningEnabledKey =
+      'sensitive_document_warning_enabled';
 
   final SecureStorageService _storage;
 
@@ -43,6 +45,17 @@ class SecuritySettingsService {
 
   Future<void> setBiometricLockEnabled(bool value) {
     return _storage.writeBool(biometricLockEnabledKey, value);
+  }
+
+  Future<bool> isSensitiveDocumentWarningEnabled() {
+    return _storage.readBool(
+      sensitiveDocumentWarningEnabledKey,
+      defaultValue: true,
+    );
+  }
+
+  Future<void> setSensitiveDocumentWarningEnabled(bool value) {
+    return _storage.writeBool(sensitiveDocumentWarningEnabledKey, value);
   }
 
   Future<String?> readGuardianPhoneNumber() {
