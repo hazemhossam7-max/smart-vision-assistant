@@ -54,7 +54,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late final FrameCaptureService _frameCaptureService;
 
   bool _cameraReady = false;
-  bool _voiceReady = false;
   bool _isBusy = false;
   String _status = 'Initializing voice assistant...';
   String _recognizedCommand = '';
@@ -166,7 +165,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       if (mounted) {
         setState(() {
-          _voiceReady = true;
           _status = 'Listening...';
         });
       }
