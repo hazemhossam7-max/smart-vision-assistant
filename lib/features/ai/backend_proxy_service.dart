@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../../core/constants/app_config.dart';
+import '../../core/security/app_integrity_service.dart';
+import '../../core/security/security_audit_logger.dart';
 import '../vision/frame_metadata.dart';
 import '../voice/intent_classifier.dart';
 import 'ai_service.dart';
@@ -12,11 +14,17 @@ class BackendProxyService implements AiService {
   const BackendProxyService({
     http.Client? client,
     String? baseUrl,
+    AppIntegrityService integrityService = const AppIntegrityService(),
+    SecurityAuditLogger auditLogger = const SecurityAuditLogger(),
   })  : _client = client,
-        _baseUrl = baseUrl;
+        _baseUrl = baseUrl,
+        _integrityService = integrityService,
+        _auditLogger = auditLogger;
 
   final http.Client? _client;
   final String? _baseUrl;
+  final AppIntegrityService _integrityService;
+  final SecurityAuditLogger _auditLogger;
 
   @override
   Future<AiResponse> analyzeKeyframes({
@@ -47,7 +55,7 @@ class BackendProxyService implements AiService {
 
       final response = await client.post(
         endpoint,
-        headers: _headers,
+        headers: await _headers(),
         body: jsonEncode({
           'userCommand': userCommand,
           'intent': intent.label,
@@ -61,6 +69,10 @@ class BackendProxyService implements AiService {
       final responseProvider = decoded?['provider'];
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        _auditLogger.logBackendError(
+          provider: 'backend',
+          statusCode: response.statusCode,
+        );
         return AiResponse(
           provider: 'backend_error_${response.statusCode}',
           text: responseText is String && responseText.trim().isNotEmpty
@@ -78,6 +90,7 @@ class BackendProxyService implements AiService {
             : 'The backend returned an empty response. Please try again.',
       );
     } catch (_) {
+      _auditLogger.logBackendError(provider: 'backend', statusCode: null);
       return const AiResponse(
         provider: 'backend_exception',
         text: 'The secure backend request failed. Please check that the backend is running and try again.',
@@ -89,11 +102,12 @@ class BackendProxyService implements AiService {
     }
   }
 
-  Map<String, String> get _headers {
+  Future<Map<String, String>> _headers() async {
     final headers = <String, String>{'Content-Type': 'application/json'};
     if (AppConfig.backendClientToken.isNotEmpty) {
       headers['X-Client-Token'] = AppConfig.backendClientToken;
     }
+    headers.addAll(await _integrityService.buildIntegrityHeaders());
     return headers;
   }
 
