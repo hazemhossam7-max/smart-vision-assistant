@@ -33,6 +33,13 @@ class AppConfig {
     'ALLOW_DIRECT_AI_PROVIDERS',
     defaultValue: false,
   );
+  static const requireCertificatePinning = bool.fromEnvironment(
+    'REQUIRE_CERTIFICATE_PINNING',
+    defaultValue: false,
+  );
+  static const backendCertificateSha256 = String.fromEnvironment(
+    'BACKEND_CERT_SHA256',
+  );
   static const geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
   static const openAiApiKey = String.fromEnvironment('OPENAI_API_KEY');
   static const openRouterApiKey = String.fromEnvironment('OPENROUTER_API_KEY');
