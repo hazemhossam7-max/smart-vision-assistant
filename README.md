@@ -122,10 +122,12 @@ Expected model file:
 - Input: one RGB face crop, `112 x 112 x 3`, float normalized with `(value - 127.5) / 128.0`
 - Output: one embedding vector, currently configured as 192 floats
 
-This repository includes only a placeholder at that path. Replace it with a real
-MobileFaceNet/FaceNet `.tflite` model before running face registration on a
-device. If your model uses a different input size or embedding length, update
-`FaceEmbeddingService` in `lib/features/face/face_embedding_service.dart`.
+This repository includes a MobileFaceNet `.tflite` model sourced from the
+BSD-3-Clause licensed `MCarlomagno/FaceRecognitionAuth` project. See
+`ml/model_cards/mobilefacenet_tflite.md` for source, license, and tensor-shape
+details. If you replace the model with one that uses a different input size or
+embedding length, update `FaceEmbeddingService` in
+`lib/features/face/face_embedding_service.dart`.
 
 The asset is declared in `pubspec.yaml`:
 
@@ -135,7 +137,7 @@ flutter:
     - assets/models/mobilefacenet.tflite
 ```
 
-After replacing the model:
+After installing dependencies:
 
 ```bash
 flutter pub get
