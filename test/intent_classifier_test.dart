@@ -53,7 +53,23 @@ void main() {
         VisionIntent.faceRecognition,
       );
       expect(
+        classifier.classify('Who is infront of me?'),
+        VisionIntent.faceRecognition,
+      );
+      expect(
+        classifier.classify('Who is in-front of me?'),
+        VisionIntent.faceRecognition,
+      );
+      expect(
         classifier.classify('Who is shouting in front of me?'),
+        VisionIntent.faceRecognition,
+      );
+      expect(
+        classifier.classify('Who is near me?'),
+        VisionIntent.faceRecognition,
+      );
+      expect(
+        classifier.classify('Who is this?'),
         VisionIntent.faceRecognition,
       );
       expect(

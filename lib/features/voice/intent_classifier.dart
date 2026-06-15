@@ -54,18 +54,7 @@ class IntentClassifier {
       return VisionIntent.faceRegistration;
     }
 
-    if (_containsAny(text, const [
-      'who is in front of me',
-      'who is standing in front of me',
-      'who is here',
-      'who is beside me',
-      'who is next to me',
-      'who is shouting in front of me',
-      'describe the person in front of me',
-      'describe this person',
-      'identify this person',
-      'recognize this person',
-    ])) {
+    if (_isFaceRecognitionCommand(command)) {
       return VisionIntent.faceRecognition;
     }
 
@@ -221,6 +210,70 @@ class IntentClassifier {
     return hasRegistrationVerb && hasFaceSubject;
   }
 
+  bool _isFaceRecognitionCommand(String command) {
+    final text = _normalize(command);
+    if (_containsAny(text, const [
+      'who is in front of me',
+      'who is standing in front of me',
+      'who is here',
+      'who is beside me',
+      'who is next to me',
+      'who is near me',
+      'who is with me',
+      'who is this',
+      'who is that',
+      'who is shouting in front of me',
+      'describe the person in front of me',
+      'describe this person',
+      'describe that person',
+      'identify this person',
+      'identify that person',
+      'recognize this person',
+      'recognize that person',
+    ])) {
+      return true;
+    }
+
+    final asksWho = _containsAny(text, const [
+      'who is',
+      'who are',
+      'who s',
+      'who',
+    ]);
+    final nearbyPersonContext = _containsAny(text, const [
+      'in front',
+      'front of me',
+      'standing',
+      'here',
+      'beside me',
+      'next to me',
+      'near me',
+      'with me',
+      'around me',
+      'shouting',
+    ]);
+    if (asksWho && nearbyPersonContext) {
+      return true;
+    }
+
+    final wantsDescription = _containsAny(text, const [
+      'describe',
+      'identify',
+      'recognize',
+    ]);
+    final hasPersonSubject = _containsAny(text, const [
+      'person',
+      'man',
+      'woman',
+      'guy',
+      'boy',
+      'girl',
+      'face',
+    ]);
+
+    return wantsDescription && hasPersonSubject;
+  }
+
   String _cleanName(String name) {
     return name
         .replaceAll(RegExp(r'[^\w\s-]'), '')
@@ -231,6 +284,8 @@ class IntentClassifier {
   String _normalize(String text) {
     return text
         .toLowerCase()
+        .replaceAll(RegExp(r'\bin[\s-]*front\b'), 'in front')
+        .replaceAll(RegExp(r'\bin\s+the\s+front\b'), 'in front')
         .replaceAll(RegExp(r'[^\w\s-]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
