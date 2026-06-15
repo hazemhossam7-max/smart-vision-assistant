@@ -37,7 +37,7 @@ extension VisionIntentLabel on VisionIntent {
 
 class IntentClassifier {
   VisionIntent classify(String command) {
-    final text = command.toLowerCase();
+    final text = _normalize(command);
 
     if (_containsAny(text, const [
       'help me',
@@ -50,14 +50,7 @@ class IntentClassifier {
       return VisionIntent.emergencyHelp;
     }
 
-    if (extractFaceRegistrationName(command) != null ||
-        _containsAny(text, const [
-          'register this face',
-          'save this face',
-          'remember this person',
-          'remember this face',
-          'save this person',
-        ])) {
+    if (_isFaceRegistrationCommand(command)) {
       return VisionIntent.faceRegistration;
     }
 
@@ -162,11 +155,15 @@ class IntentClassifier {
 
     final patterns = [
       RegExp(
-        r'^(?:please\s+)?(?:register|save|remember)\s+(?:this\s+)?(?:face|person)\s+as\s+(.+)$',
+        r'^(?:please\s+)?(?:can\s+you\s+)?(?:register|save|remember|memorize)\s+(?:this|that|the|my)?\s*(?:face|person|man|woman|guy|boy|girl)\s+as\s+(.+)$',
         caseSensitive: false,
       ),
       RegExp(
         r'^(?:please\s+)?this\s+is\s+(.+)$',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'^(?:please\s+)?(?:this|that|the)\s+(?:person|man|woman|guy|boy|girl)\s+is\s+(.+)$',
         caseSensitive: false,
       ),
     ];
@@ -182,9 +179,59 @@ class IntentClassifier {
     return null;
   }
 
+  bool _isFaceRegistrationCommand(String command) {
+    if (extractFaceRegistrationName(command) != null) {
+      return true;
+    }
+
+    final text = _normalize(command);
+    if (_containsAny(text, const [
+      'register this face',
+      'register the face',
+      'register my face',
+      'register this person',
+      'register the person',
+      'save this face',
+      'save the face',
+      'save this person',
+      'remember this person',
+      'remember this face',
+      'memorize this person',
+      'memorize this face',
+    ])) {
+      return true;
+    }
+
+    final hasRegistrationVerb = _containsAny(text, const [
+      'register',
+      'save',
+      'remember',
+      'memorize',
+    ]);
+    final hasFaceSubject = _containsAny(text, const [
+      'face',
+      'person',
+      'man',
+      'woman',
+      'guy',
+      'boy',
+      'girl',
+    ]);
+
+    return hasRegistrationVerb && hasFaceSubject;
+  }
+
   String _cleanName(String name) {
     return name
         .replaceAll(RegExp(r'[^\w\s-]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String _normalize(String text) {
+    return text
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\w\s-]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
   }
