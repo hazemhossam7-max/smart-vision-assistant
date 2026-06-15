@@ -59,6 +59,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   bool _cameraReady = false;
   bool _isBusy = false;
+  bool _isListeningForCommand = false;
   String _status = 'Initializing voice assistant...';
   String _recognizedCommand = '';
   VisionIntent? _intent;
@@ -88,7 +89,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
 
       setState(() {
-        _status = 'Ready. Press the microphone and speak a command.';
+        _status = 'Ready. Hold the microphone, speak, then release to send.';
       });
     } catch (error) {
       _logger.info('Initialization failed: $error');
@@ -133,7 +134,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _handleVoiceCommand() async {
+  Future<void> _handleVoiceCommandStart() async {
     if (_isBusy) {
       return;
     }
@@ -171,11 +172,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       if (mounted) {
         setState(() {
-          _status = 'Listening...';
+          _status = 'Listening. Release the microphone when finished.';
+          _isListeningForCommand = true;
         });
       }
 
       final command = await _voiceService.listenForCommand(
+        completeOnFinalResult: false,
+        listenFor: const Duration(minutes: 2),
+        timeout: const Duration(minutes: 2, seconds: 5),
         onPartialResult: (text) {
           if (!mounted) {
             return;
@@ -183,6 +188,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           setState(() => _recognizedCommand = text);
         },
       );
+      if (mounted) {
+        setState(() {
+          _isListeningForCommand = false;
+          _status = 'Processing command...';
+        });
+      }
 
       if (command.trim().isEmpty) {
         await _stopWithMessage('I did not hear a command. Please try again.');
@@ -404,8 +415,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _status = 'Pipeline failed: $error';
         _isBusy = false;
+        _isListeningForCommand = false;
       });
     } finally {
+      if (mounted && _isListeningForCommand) {
+        setState(() => _isListeningForCommand = false);
+      }
       final cleanupFrames =
           await _securitySettingsService.isPrivacyModeEnabled();
       if (cleanupFrames && analyzedFrames.isNotEmpty) {
@@ -413,6 +428,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             .deleteTemporaryFrameFiles(analyzedFrames);
       }
     }
+  }
+
+  Future<void> _handleVoiceCommandEnd() async {
+    if (!_isBusy) {
+      return;
+    }
+
+    if (mounted && _isListeningForCommand) {
+      setState(() => _status = 'Processing command...');
+    }
+
+    await _voiceService.stop();
   }
 
   Future<void> _handleFaceRegistration(String command) async {
@@ -785,7 +812,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             Center(
               child: AccessibleMicrophoneButton(
                 isBusy: _isBusy,
-                onPressed: _handleVoiceCommand,
+                isListening: _isListeningForCommand,
+                onHoldStart: _handleVoiceCommandStart,
+                onHoldEnd: _handleVoiceCommandEnd,
               ),
             ),
             const SizedBox(height: 20),

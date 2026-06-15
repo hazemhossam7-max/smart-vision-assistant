@@ -29,19 +29,24 @@ class VoiceService {
   Future<String> listenForCommand({
     void Function(String text)? onPartialResult,
     void Function(String status)? onStatus,
+    bool completeOnFinalResult = true,
+    Duration listenFor = const Duration(seconds: 8),
+    Duration timeout = const Duration(seconds: 10),
   }) async {
     final completer = Completer<String>();
     var bestWords = '';
 
     await _speech.listen(
-      listenFor: const Duration(seconds: 8),
+      listenFor: listenFor,
       pauseFor: const Duration(seconds: 2),
       listenOptions: SpeechListenOptions(partialResults: true),
       onResult: (SpeechRecognitionResult result) {
         bestWords = result.recognizedWords.trim();
         onPartialResult?.call(bestWords);
 
-        if (result.finalResult && !completer.isCompleted) {
+        if (completeOnFinalResult &&
+            result.finalResult &&
+            !completer.isCompleted) {
           completer.complete(bestWords);
         }
       },
@@ -59,7 +64,7 @@ class VoiceService {
 
     try {
       return await completer.future.timeout(
-        const Duration(seconds: 10),
+        timeout,
         onTimeout: () => bestWords,
       );
     } finally {
