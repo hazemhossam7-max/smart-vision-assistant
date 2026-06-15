@@ -446,13 +446,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     XFile? frame;
 
     try {
-      var name = _intentClassifier.extractFaceRegistrationName(command);
+      var name = _extractRegistrationName(command);
       if (name == null || name.trim().isEmpty) {
         const question = 'What is this person\'s name?';
         setState(() => _status = question);
         await _ttsService.speak(question);
 
-        name = await _voiceService.listenForCommand(
+        final spokenName = await _voiceService.listenForCommand(
           onPartialResult: (text) {
             if (!mounted) {
               return;
@@ -460,6 +460,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             setState(() => _recognizedCommand = '$command\nName: $text');
           },
         );
+        name = _extractRegistrationName(spokenName) ?? spokenName;
       }
 
       name = _cleanSpokenName(name);
@@ -594,9 +595,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   String _cleanSpokenName(String name) {
     return name
+        .replaceFirst(
+          RegExp(
+            r'^(?:my\s+name\s+is|name\s+is|it\s+is|this\s+is|called)\s+',
+            caseSensitive: false,
+          ),
+          '',
+        )
         .replaceAll(RegExp(r'[^\w\s-]'), '')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+  }
+
+  String? _extractRegistrationName(String text) {
+    final directName = _intentClassifier.extractFaceRegistrationName(text);
+    if (directName != null && directName.trim().isNotEmpty) {
+      return directName;
+    }
+
+    final match = RegExp(
+      r'\bas\s+([a-zA-Z][\w\s-]*)$',
+      caseSensitive: false,
+    ).firstMatch(text.trim());
+    final fallbackName = match?.group(1)?.trim();
+    if (fallbackName == null || fallbackName.isEmpty) {
+      return null;
+    }
+
+    return fallbackName;
   }
 
   Future<void> _handleEmergency(String command) async {

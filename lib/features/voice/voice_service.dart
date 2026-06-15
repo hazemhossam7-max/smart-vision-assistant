@@ -7,6 +7,10 @@ import 'package:speech_to_text/speech_to_text.dart';
 class VoiceService {
   final SpeechToText _speech = SpeechToText();
 
+  Completer<String>? _activeCompleter;
+  String _activeBestWords = '';
+  bool _manualStopRequested = false;
+
   bool get isListening => _speech.isListening;
 
   Future<bool> initialize() async {
@@ -35,30 +39,49 @@ class VoiceService {
   }) async {
     final completer = Completer<String>();
     var bestWords = '';
+    _activeCompleter = completer;
+    _activeBestWords = '';
+    _manualStopRequested = false;
 
-    await _speech.listen(
-      listenFor: listenFor,
-      pauseFor: const Duration(seconds: 2),
-      listenOptions: SpeechListenOptions(partialResults: true),
-      onResult: (SpeechRecognitionResult result) {
-        bestWords = result.recognizedWords.trim();
-        onPartialResult?.call(bestWords);
+    Future<void> startListening() async {
+      if (completer.isCompleted || _speech.isListening) {
+        return;
+      }
 
-        if (completeOnFinalResult &&
-            result.finalResult &&
-            !completer.isCompleted) {
-          completer.complete(bestWords);
-        }
-      },
-    );
+      await _speech.listen(
+        listenFor: listenFor,
+        pauseFor: const Duration(seconds: 2),
+        listenOptions: SpeechListenOptions(partialResults: true),
+        onResult: (SpeechRecognitionResult result) {
+          final words = result.recognizedWords.trim();
+          if (words.isNotEmpty) {
+            bestWords = words;
+            _activeBestWords = words;
+          }
+          onPartialResult?.call(bestWords);
+
+          if (completeOnFinalResult &&
+              result.finalResult &&
+              !completer.isCompleted) {
+            completer.complete(bestWords);
+          }
+        },
+      );
+    }
+
+    await startListening();
 
     final subscriptionTimer =
-        Timer.periodic(const Duration(milliseconds: 250), (_) {
+        Timer.periodic(const Duration(milliseconds: 250), (_) async {
       final status = _speech.isListening ? 'listening' : 'not_listening';
       onStatus?.call(status);
 
       if (!_speech.isListening && !completer.isCompleted) {
-        completer.complete(bestWords);
+        if (completeOnFinalResult || _manualStopRequested) {
+          completer.complete(bestWords);
+        } else {
+          await startListening();
+        }
       }
     });
 
@@ -72,8 +95,20 @@ class VoiceService {
       if (_speech.isListening) {
         await _speech.stop();
       }
+      if (identical(_activeCompleter, completer)) {
+        _activeCompleter = null;
+        _activeBestWords = '';
+        _manualStopRequested = false;
+      }
     }
   }
 
-  Future<void> stop() => _speech.stop();
+  Future<void> stop() async {
+    _manualStopRequested = true;
+    final completer = _activeCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(_activeBestWords);
+    }
+    await _speech.stop();
+  }
 }

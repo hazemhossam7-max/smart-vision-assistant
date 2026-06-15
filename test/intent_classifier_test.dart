@@ -32,6 +32,10 @@ void main() {
         VisionIntent.faceRegistration,
       );
       expect(
+        classifier.extractFaceRegistrationName('register this person as Adham'),
+        'Adham',
+      );
+      expect(
         classifier.classify('Save this man as Adham'),
         VisionIntent.faceRegistration,
       );
