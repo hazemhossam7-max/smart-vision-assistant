@@ -12,7 +12,7 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 - Validate supported intents, selected frame count, all frame count, frame metadata, and selected image presence.
 - Add production HTTPS enforcement switch with `ENFORCE_HTTPS=true`.
 - Add production startup checks for required secrets and HTTPS enforcement.
-- Disable `X-Powered-By` and add conservative response headers.
+- Add Helmet security headers plus conservative no-store caching.
 - Disable browser CORS by default; allow explicit `CORS_ALLOWED_ORIGINS` if needed.
 - Prevent production Flutter builds from using direct AI providers unless explicitly allowed.
 - Reject insecure non-local backend URLs in production Flutter builds.
@@ -52,19 +52,23 @@ This pipeline tracks the move from a demo mobile AI integration to a safer produ
 ## Phase 6: Logging Review - Implemented MVP
 
 - Centralize app logs through `LoggerService`.
+- Add `SecurityAuditLogger` for debug-only security events.
 - Redact API keys, backend tokens, and base64 images.
 - Suppress app demo logs in production builds.
 - Keep backend logs generic and avoid raw OpenRouter error bodies.
 - Add backend request IDs and structured operational logs without image payloads.
 
-## Phase 7: APK Hardening - Started
+## Phase 7: Android/iOS Build Hardening - Started
 
 - Enable Android release minification/resource shrinking with R8/ProGuard.
 - Add conservative ProGuard keep rules for Flutter and local auth.
+- Change Android application ID to `com.smartvision.assistant`.
+- Add Android release signing template using `android/key.properties` without committing real keys.
+- Add iOS permission descriptions and local-network ATS development configuration.
 - Release builds should also use Flutter obfuscation:
 
 ```bash
-flutter build apk --release --obfuscate --split-debug-info=build/symbols
+flutter build apk --release --obfuscate --split-debug-info=build/debug-info
 ```
 
 ## Phase 8: Root Detection - Implemented Basic Signal
@@ -89,14 +93,15 @@ flutter build apk --release --obfuscate --split-debug-info=build/symbols
 - Fail closed if production requires pinning but no pin is configured.
 - Pending: implement runtime certificate/SPKI verification after a stable production backend domain and certificate lifecycle exist.
 
-## Phase 11: Face/PII Redaction Before Upload - Pending
+## Phase 11: Face/PII Redaction Before Upload - Scaffolded / Pending Full Redaction
 
-- Required before public production for camera frames in sensitive settings.
-- Recommended implementation:
+- Add `PrivacyRedactor` scaffold and run it before cloud upload when Privacy Mode is enabled.
+- Current scaffold preserves existing frame files to avoid breaking camera/keyframe/AI flow.
+- Required before public production for camera frames in sensitive settings:
   - On-device face detection / ML Kit.
   - Blur faces and sensitive text regions before upload when privacy mode is on.
   - Preserve accessibility value by sending redacted but still useful keyframes.
-- Do not ship a fake redaction toggle without real redaction.
+- Do not claim full redaction is complete until implemented and tested.
 
 ## Phase 12: Voice Biometric Authentication - Pending / Needs Specialist Design
 
@@ -119,6 +124,7 @@ flutter build apk --release --obfuscate --split-debug-info=build/symbols
 - Add `backend/Dockerfile` and `backend/.dockerignore` for containerized deployment.
 - Add backend healthcheck support.
 - Document Docker run configuration in `README.md`.
+- Add `docs/security/PRODUCTION_SECURITY.md`.
 - Pending: deploy the backend behind HTTPS using a managed platform or reverse proxy.
 - Pending: set production environment variables in the host platform, not in committed files.
 - Pending: configure domain allowlists and network firewall rules where available.
@@ -138,21 +144,24 @@ flutter build apk --release --obfuscate --split-debug-info=build/symbols
 - Add backend in-memory rate limiting.
 - Add a configurable in-memory daily request quota with `DAILY_QUOTA_MAX_REQUESTS`.
 - Add rate-limit and daily-quota response headers.
+- Add stricter vision endpoint rate limiting.
+- Add OpenRouter timeout protection.
 - Pending: replace in-memory controls with Redis or a managed rate-limit/quota service for multi-instance deployments.
 - Pending: add per-user, per-device, and per-IP quotas backed by authenticated identity.
 - Pending: add OpenRouter spend caps, alerting, and cost dashboards.
 
 ## Phase 17: Privacy and Data Governance - Started
 
-- Add `docs/security/PRIVACY_POLICY_DRAFT.md`.
+- Add `docs/security/PRIVACY_POLICY_DRAFT.md` with retention/deletion placeholders.
 - Pending: publish a reviewed privacy policy explaining camera frame processing and third-party AI processing.
 - Pending: add explicit user consent copy to onboarding if onboarding is added.
-- Pending: avoid storing image frames unless a user explicitly opts in.
-- Pending: define retention rules for logs and metadata.
+- Pending: define final retention rules for logs, images, transcripts, and metadata.
 - Pending: review OpenRouter/model-provider retention settings and terms.
 
 ## Phase 18: Threat Model and Penetration Testing - Started
 
 - Add `docs/security/THREAT_MODEL.md`.
 - Add `docs/security/PENTEST_REPORT.md` template/checklist.
+- Add APK and IPA secret scanning commands.
+- Add pure Dart security service tests.
 - Pending: execute tests, record evidence, and close findings.
