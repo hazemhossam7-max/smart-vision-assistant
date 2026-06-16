@@ -46,6 +46,8 @@ class PrivacyGuardService {
         return 'Selected camera frames may be sent to the AI for obstacle detection.';
       case VisionIntent.currencyRecognition:
         return 'Selected camera frames may be sent to the AI for currency recognition.';
+      case VisionIntent.emergencyHelp:
+        return 'Emergency mode does not send camera frames to the AI.';
     }
   }
 }
