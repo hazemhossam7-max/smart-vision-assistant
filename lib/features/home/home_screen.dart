@@ -21,6 +21,7 @@ import '../tts/tts_service.dart';
 import '../vision/frame_metadata.dart';
 import '../vision/frame_quality_analyzer.dart';
 import '../vision/keyframe_selector.dart';
+import '../vision/privacy_redactor.dart';
 import '../voice/intent_classifier.dart';
 import '../voice/voice_service.dart';
 import 'widgets/accessible_microphone_button.dart';
@@ -44,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _keyframeSelector = const KeyframeSelector();
   final _ttsService = TtsService();
   final _privacyGuardService = const PrivacyGuardService();
+  final _privacyRedactor = const PrivacyRedactor();
   final _safetyModerationService = const AiSafetyModerationService();
   final _securitySettingsService = const SecuritySettingsService();
   final _temporaryFrameCleanupService = const TemporaryFrameCleanupService();
@@ -289,6 +291,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return;
       }
 
+      final privacyModeEnabled = await _securitySettingsService.isPrivacyModeEnabled();
+      final uploadFrames = await _privacyRedactor.redactIfNeeded(
+        frames: safeFrames,
+        intent: intent,
+        privacyModeEnabled: privacyModeEnabled,
+      );
+
       final hasConsent = await _ensureCloudConsent(intent);
       if (!hasConsent) {
         await _ttsService.speak('Cloud analysis cancelled.');
@@ -297,7 +306,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }
         setState(() {
           _allFrames = analyzedFrames;
-          _selectedFrames = safeFrames;
+          _selectedFrames = uploadFrames;
           _status = 'Cloud analysis cancelled.';
           _isBusy = false;
         });
@@ -306,21 +315,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       setState(() {
         _allFrames = analyzedFrames;
-        _selectedFrames = safeFrames;
-        _status = safeFrames.length == selectedFrames.length
+        _selectedFrames = uploadFrames;
+        _status = uploadFrames.length == selectedFrames.length
             ? 'Sending selected keyframes to secure backend...'
-            : 'Sending ${safeFrames.length} privacy-safe keyframes to secure backend...';
+            : 'Sending ${uploadFrames.length} privacy-safe keyframes to secure backend...';
       });
 
       _auditLogger.logAiRequest(
         provider: _aiService.runtimeType.toString(),
         intent: intent.label,
-        selectedFrameCount: safeFrames.length,
+        selectedFrameCount: uploadFrames.length,
       );
       final response = await _aiService.analyzeKeyframes(
         userCommand: command,
         intent: intent,
-        selectedFrames: safeFrames,
+        selectedFrames: uploadFrames,
         allFrames: analyzedFrames,
       );
       final moderatedResponse =
@@ -334,7 +343,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       setState(() {
         _assistantResponse = moderatedResponse;
-        _status = 'Done. ${safeFrames.length} privacy-safe keyframes selected.';
+        _status = 'Done. ${uploadFrames.length} privacy-safe keyframes selected.';
         _isBusy = false;
       });
     } catch (error) {
