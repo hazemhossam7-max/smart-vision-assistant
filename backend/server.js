@@ -3,6 +3,7 @@ require('dotenv').config();
 const crypto = require('crypto');
 const cors = require('cors');
 const express = require('express');
+const helmet = require('helmet');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -63,6 +64,10 @@ if (trustedProxy) {
 
 app.disable('x-powered-by');
 app.use(assignRequestId);
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
 app.use(securityHeaders);
 app.use(logRequestLifecycle);
 app.use(cors(buildCorsOptions()));
@@ -256,10 +261,7 @@ function isSafeRequestId(value) {
 }
 
 function securityHeaders(_request, response, next) {
-  response.setHeader('X-Content-Type-Options', 'nosniff');
-  response.setHeader('Referrer-Policy', 'no-referrer');
   response.setHeader('Cache-Control', 'no-store');
-  response.setHeader('Cross-Origin-Resource-Policy', 'same-site');
   next();
 }
 
