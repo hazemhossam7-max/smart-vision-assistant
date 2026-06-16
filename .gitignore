@@ -7,6 +7,9 @@ coverage/
 
 android/.gradle/
 android/local.properties
+android/key.properties
+*.jks
+*.keystore
 ios/Pods/
 ios/.symlinks/
 ios/Flutter/Flutter.framework
