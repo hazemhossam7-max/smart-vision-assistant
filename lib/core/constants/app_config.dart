@@ -52,8 +52,10 @@ class AppConfig {
     defaultValue: 'google/gemini-2.5-flash',
   );
 
-  // Local Android development uses adb reverse to reach this backend URL.
-  // Production builds must pass an HTTPS backend URL with BACKEND_BASE_URL.
+  // Local Android device development uses adb reverse with http://127.0.0.1:3000.
+  // iOS simulator can use http://127.0.0.1:3000 or localhost.
+  // iOS physical devices need the laptop LAN IP during development or a deployed HTTPS backend.
+  // Production Android and iOS builds must pass an HTTPS BACKEND_BASE_URL.
   static const backendBaseUrl = String.fromEnvironment(
     'BACKEND_BASE_URL',
     defaultValue: 'http://127.0.0.1:3000',
