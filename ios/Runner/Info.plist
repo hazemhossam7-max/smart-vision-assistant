@@ -24,14 +24,29 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>sms</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Development only: permits iOS simulator/local networking to reach the local backend. Production must use HTTPS. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Smart Vision Assistant uses the camera to capture short frame bursts for visual assistance.</string>
+	<string>Smart Vision Assistant uses the camera to capture frames for describing surroundings and reading text.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Smart Vision Assistant uses Face ID or device authentication to protect sensitive privacy settings.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Smart Vision Assistant uses location only for navigation help or emergency sharing when requested.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Smart Vision Assistant uses the microphone to understand voice commands.</string>
+	<string>Smart Vision Assistant uses the microphone to listen for voice commands.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Smart Vision Assistant uses speech recognition to classify spoken commands.</string>
+	<string>Smart Vision Assistant uses speech recognition to convert voice commands into text.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
