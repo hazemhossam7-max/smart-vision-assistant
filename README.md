@@ -19,9 +19,10 @@ OpenRouter API key stays off the mobile app.
 6. The camera captures a short burst of frames.
 7. Each frame is scored locally using clarity, brightness, uniqueness, object importance, and motion/change.
 8. Bad frames are filtered out.
-9. The top 3 keyframes are selected.
-10. The backend proxy receives only selected frames plus metadata and calls OpenRouter.
-11. The response is spoken with TTS and displayed on screen.
+9. Privacy redaction scaffold runs before upload when Privacy Mode is enabled.
+10. The top 3 keyframes are selected.
+11. The backend proxy receives only selected frames plus metadata and calls OpenRouter.
+12. The response is spoken with TTS and displayed on screen.
 
 ## Supported Intents
 
@@ -54,6 +55,7 @@ The app currently captures a short burst and selects the top 3 keyframes.
 - Sensitive text-reading commands show a warning before capturing IDs, cards, passwords, or medical papers.
 - Cloud consent and privacy settings are stored with `flutter_secure_storage`.
 - Selected keyframes are filtered by `PrivacyGuardService` before upload.
+- `PrivacyRedactor` is scaffolded before upload; full face/PII redaction is still pending.
 - Temporary camera frame files are deleted after the pipeline finishes when Privacy Mode is enabled.
 - Microphone, camera, and location permissions are requested only when needed for the current action.
 - The Security & Privacy screen protects sensitive actions with device biometric/PIN auth when enabled.
@@ -120,7 +122,7 @@ Health check:
 curl http://127.0.0.1:3000/health
 ```
 
-Terminal 2 for a real Android device:
+Android device development:
 
 ```bash
 adb devices
@@ -130,6 +132,16 @@ flutter run -d 07748251CL002087 ^
   --dart-define=BACKEND_BASE_URL=http://127.0.0.1:3000 ^
   --dart-define=BACKEND_CLIENT_TOKEN=make_this_a_long_random_value
 ```
+
+iOS simulator development:
+
+```bash
+flutter run -d ios \
+  --dart-define=AI_PROVIDER=backend \
+  --dart-define=BACKEND_BASE_URL=http://127.0.0.1:3000
+```
+
+iOS physical device development should use your laptop LAN IP, for example `http://192.168.1.X:3000`, or a deployed HTTPS backend.
 
 Production should use an HTTPS backend URL instead of local cleartext HTTP.
 
@@ -194,8 +206,9 @@ flutter build apk --release --obfuscate --split-debug-info=build/debug-info \
 `REQUIRE_IMAGE_REDACTION=true` should stay enabled for public production until
 real on-device face/PII redaction is implemented. Production backend environment
 should set `ENFORCE_HTTPS=true`, keep secrets in the host secret manager or
-environment settings, and avoid committing `.env`. See `SECURITY_PIPELINE.md`
-and `SECURITY_CHECKLIST.md` for the remaining hardening plan.
+environment settings, and avoid committing `.env`. See `SECURITY_PIPELINE.md`,
+`SECURITY_CHECKLIST.md`, and `docs/security/PRODUCTION_SECURITY.md` for the
+remaining hardening plan.
 
 ## Platform Setup
 
@@ -218,6 +231,8 @@ Then add camera and microphone permission descriptions to the generated platform
   - `NSCameraUsageDescription`
   - `NSMicrophoneUsageDescription`
   - `NSSpeechRecognitionUsageDescription`
+  - `NSLocationWhenInUseUsageDescription`
+  - `NSFaceIDUsageDescription`
 
 ## Verify
 
