@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
+    <!-- Development only: allows Flutter app on a real Android device to reach local backend through adb reverse. -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">127.0.0.1</domain>
         <domain includeSubdomains="true">localhost</domain>
     </domain-config>
+
+    <!-- Production default: block insecure HTTP traffic. Use HTTPS backend in production. -->
     <base-config cleartextTrafficPermitted="false" />
 </network-security-config>
